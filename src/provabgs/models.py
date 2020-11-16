@@ -34,7 +34,6 @@ class Model(object):
         pass
 
 
-
 class FSPS(Model): 
     '''
     '''
@@ -79,10 +78,12 @@ class FSPS(Model):
         return None  
 
 
+class DESIspeculator(Model): 
+    ''' DESI speculator is a FSPS model emulator that is specifically trained
+    for the DESI PROVABGS. It achieves <1% accuracy over the wavelength range
+    2300 < lambda < 11000 Angstroms.
 
-class Speculator(Model): 
-    ''' Speculator is a FSPS model emulator. This is the Speculator model
-    specifically trained for the DESI PROVABGS 
+    more details to come 
 
 
     References
@@ -172,78 +173,44 @@ class Speculator(Model):
         return np.array(outwave), np.array(outspec)
 
     def _emulator(self, tt):
-        ''' emulator for FSPS 
-
-        :param tt: 
-            array [b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH, tau, tage]
-        :return flux: 
-            FSPS SSP flux in units of Lsun/A
+        ''' forward pass through the the three speculator NN wave bins to
+        predict SED 
+        
+        parameters
+        ----------
+        tt : np.ndarray
+            array of parameter values [b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH, tau, tage]
+    
+        returns
+        -------
+        array
+            SSP flux in units of Lsun/A
         '''
+        logflux = [] 
         for iwave in range(3): # wave bins
 
-        # forward pass through the network
-        act = []
-        offset = np.log(np.sum(tt[0:4]))
-        layers = [(self._transform_theta(tt) - self._emu_theta_mean)/self._emu_theta_std]
-        for i in range(self._emu_n_layers-1):
-       
-            # linear network operation
-            act.append(np.dot(layers[-1], self._emu_W[i]) + self._emu_b[i])
+            # forward pass through the network
+            act = []
+            offset = np.log(np.sum(tt[0:4]))
+            #layers = [(self._transform_theta(tt) - self._emu_theta_mean)/self._emu_theta_std]
+            layers = [(tt - self._emu_theta_mean[iwave])/self._emu_theta_std[iwave]]
 
-            # pass through activation function
-            layers.append((self._emu_beta[i] + (1.-self._emu_beta[i])*1./(1.+np.exp(-self._emu_alpha[i]*act[-1])))*act[-1])
+            for i in range(self._emu_n_layers[iwave]-1):
+           
+                # linear network operation
+                act.append(np.dot(layers[-1], self._emu_W[iwave][i]) + self._emu_b[iwave][i])
 
-        # final (linear) layer -> (normalized) PCA coefficients
-        layers.append(np.dot(layers[-1], self._emu_W[-1]) + self._emu_b[-1])
+                # pass through activation function
+                layers.append((self._emu_beta[iwave][i] + (1.-self._emu_beta[iwave][i]) * 1./(1.+np.exp(-self._emu_alpha[iwave][i]*act[-1])))*act[-1])
 
-        # rescale PCA coefficients, multiply out PCA basis -> normalized spectrum, shift and re-scale spectrum -> output spectrum
-        logflux = np.dot(layers[-1]*self._emu_pca_std + self._emu_pca_mean, self._emu_pcas)*self._emu_spec_std + self._emu_spec_mean + offset
-        flux = np.exp(logflux)
+            # final (linear) layer -> (normalized) PCA coefficients
+            layers.append(np.dot(layers[-1], self._emu_W[iwave][-1]) + self._emu_b[iwave][-1])
 
-        # normalization for the SSP SED because the SED is not normalized by
-        # the integral of the SFH. This normalization should be incorporated
-        # into the training set of Speculator rather than here, but for now
-        # hacked together. 
-        _t = np.linspace(0, tt[7], 50)
-        norm_sfh = np.sum([tt[:4][i] * 
-            self._sfh_basis[i](_t)/np.trapz(self._sfh_basis[i](_t), _t) for i
-            in range(4)])
-        flux /= norm_sfh
-        return flux 
+            # rescale PCA coefficients, multiply out PCA basis -> normalized spectrum, shift and re-scale spectrum -> output spectrum
+            _logflux = np.dot(layers[-1]*self._emu_pca_std[iwave] + self._emu_pca_mean[iwave], self._emu_pcas[iwave]) * self._emu_spec_std[iwave] + self._emu_spec_mean[iwave] + offset
+            logflux.append(_logflux)
 
-    def _load_NMF_bases(self): 
-        ''' read NMF SFH and ZH bases and store it to object
-        '''
-        fsfh = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat',
-                'NMF_2basis_SFH_components_nowgt_lin_Nc4.txt')
-        fzh = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat',
-                'NMF_2basis_Z_components_nowgt_lin_Nc2.txt') 
-        ft = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat',
-                'sfh_t_int.txt') 
-
-        nmf_sfh = np.loadtxt(fsfh) 
-        nmf_zh  = np.loadtxt(fzh) 
-        nmf_t   = np.loadtxt(ft) # look back time 
-
-        self._nmf_t_lookback    = nmf_t
-        self._nmf_sfh_basis     = nmf_sfh 
-        self._nmf_zh_basis      = nmf_zh
-
-        Ncomp_sfh = self._nmf_sfh_basis.shape[0]
-        Ncomp_zh = self._nmf_zh_basis.shape[0]
-    
-        self._sfh_basis = [
-                Interp.InterpolatedUnivariateSpline(
-                    max(self._nmf_t_lookback) - self._nmf_t_lookback, 
-                    self._nmf_sfh_basis[i], k=1) 
-                for i in range(Ncomp_sfh)
-                ]
-        self._zh_basis = [
-                Interp.InterpolatedUnivariateSpline(
-                    max(self._nmf_t_lookback) - self._nmf_t_lookback, 
-                    self._nmf_zh_basis[i], k=1) 
-                for i in range(Ncomp_zh)]
-        return None 
+        return np.exp(np.concatenate(logflux)) 
 
     def _init_model(self): 
         ''' initialize the Speculator model 
