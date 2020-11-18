@@ -21,7 +21,8 @@ from . import util as UT
 
 
 class Model(object): 
-    ''' base class object for SPS models 
+    ''' Base class object for different SPS models. The primary purpose of the
+    `Model` class is to evaluate the SED given a set of parameter values. 
     '''
     def __init__(self, cosmo=None, **kwargs): 
 
@@ -39,7 +40,6 @@ class Model(object):
                 Interp.InterpolatedUnivariateSpline(_z, _tage, k=3)
         self._d_lum_z_interp = \
                 Interp.InterpolatedUnivariateSpline(_z, _d_lum_cm, k=3)
-
 
     def sed(self, tt):
         ''' compute SED given a set of parameter values `tt`. 
@@ -104,13 +104,11 @@ class FSPS(Model):
                 print('FSPS.sed: redshift = %f' % zred)
                 print('FSPS.sed: tage = %f' % tage) 
 
-            tt_arr = np.contatenate([_tt, [tage]])
+            tt_arr = np.concatenate([_tt, [tage]])
             if debug: print('FSPS.sed: theta', tt_arr)
             
             # get SSP luminosity
-            if self.name == 'default': 
-                ssp_lum = self._fsps_model(tt_arr[1:]) 
-
+            ssp_lum = self._sps_model(tt_arr[1:])
             if debug: print('FSPS.sed: ssp lum', ssp_lum)
 
             # mass normalization
@@ -131,20 +129,24 @@ class FSPS(Model):
         return np.array(outwave), np.array(outspec)
 
     def _fsps_nmf(self, tt): 
-        ''' FSPS SPS model using NMF SFH and ZH bases. 
-        
+        ''' FSPS SPS model using NMF SFH and ZH bases with Kriek and Conroy
+        attenuation curve. 
+
+
         Parameters 
         ----------
         tt : array_like[Nparam] 
             Parameter values for the **default setup**
+
 
         Returns
         -------
         wave_rest : array_like[Nwave] 
             rest-frame wavelength of SSP flux 
 
+
         lum_ssp : array_like[Nwave] 
-            FSPS SSP flux in units of Lsun/A
+            FSPS SSP luminosity in units of Lsun/A
         '''
         tt_sfh      = tt[:4] 
         tt_zh       = tt[4:6]
@@ -171,18 +173,20 @@ class FSPS(Model):
             if m <= 0 and i != 0: # no star formation in this bin 
                 continue
             self._ssp.params['logzsol'] = np.log10(z/0.0190) # log(Z/Zsun)
-            if self.model_name == 'fsps': 
-                self._ssp.params['dust2'] = tt_dust 
-            elif self.model_name == 'fsps_complexdust': 
-                self._ssp.params['dust1'] = tt_dust1
-                self._ssp.params['dust2'] = tt_dust2 
-                self._ssp.params['dust_index'] = tt_dust_index
+            self._ssp.params['dust1'] = tt_dust1
+            self._ssp.params['dust2'] = tt_dust2 
+            self._ssp.params['dust_index'] = tt_dust_index
+            
             wave_rest, lum_i = self._ssp.get_spectrum(tage=tage, peraa=True) # in units of Lsun/AA
+            # note that this spectrum is normalized such that the total formed
+            # mass = 1 Msun
 
             if i == 0: lum_ssp = np.zeros(len(wave_rest))
             lum_ssp += m * lum_i 
 
-        lum_ssp /= np.sum(sfh)
+        # the following normalization is to deal with the fact that
+        # fsps.get_spectrum is normalized so that formed_mass = 1 Msun
+        lum_ssp /= np.sum(sfh) 
         return wave_rest, lum_ssp
 
     def _init_model(self): 
@@ -200,6 +204,7 @@ class FSPS(Model):
                     'dust1', 
                     'dust2',
                     'dust_index']
+            self._sps_model = self._fsps_nmf
         else: 
             raise NotImplementedError 
         
@@ -266,9 +271,19 @@ class DESIspeculator(Model):
     References
     ----------
     * Alsing et al.(2020) 
+
+
+    Notes
+    -----
+    * Nov 17, 2020: Tested `self._emulator` against DESI speculator training
+      data and found good agreement. 
+
     '''
     def __init__(self, cosmo=None): 
         super().__init__(cosmo=cosmo)
+    
+        # load NMF SFH and ZH bases 
+        self._load_NMF_bases()
 
     def sed(self, tt, zred, wavelength=None, debug=False): 
         ''' compute the SED for a given set of parameter values and redshift.
@@ -316,15 +331,15 @@ class DESIspeculator(Model):
                 print('Speculator.sed: tage = %f' % tage) 
 
             # logmstar, b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH, tau, tage
-            tt_arr = np.contatenate([_tt, [tage]])
+            tt_arr = np.concatenate([_tt, [tage]])
             if debug: print('Speculator.sed: theta', tt_arr)
             
             # get SSP luminosity
-            ssp_lum = self._emulator(tt_arr[1:]) 
-            if debug: print('Speculator.sed: ssp lum', ssp_lum)
+            ssp_log_lum = self._emulator(tt_arr[1:]) 
+            if debug: print('Speculator.sed: log(ssp lum)', ssp_log_lum)
 
             # mass normalization
-            lum_ssp = (10**tt_arr[0]) * ssp_lum
+            lum_ssp = np.exp(tt_arr[0] * np.log(10) + ssp_log_lum)
 
             # redshift the spectra
             w_z = self._emu_waves * (1. + _zred)
@@ -343,22 +358,23 @@ class DESIspeculator(Model):
         ''' forward pass through the the three speculator NN wave bins to
         predict SED 
         
-        parameters
+        
+        Parameters
         ----------
-        tt : np.ndarray
+        tt : array_like[Nparam,]
             array of parameter values [b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH, tau, tage]
     
-        returns
+        Returns
         -------
-        array
-            SSP flux in units of Lsun/A
+        logflux : array_like[Nwave,] 
+            (natural) log of (SSP luminosity in units of Lsun/A)
         '''
         logflux = [] 
         for iwave in range(3): # wave bins
 
             # forward pass through the network
             act = []
-            offset = np.log(np.sum(tt[0:4]))
+            offset = np.log(np.sum(tt[:4]))
             #layers = [(self._transform_theta(tt) - self._emu_theta_mean)/self._emu_theta_std]
             layers = [(tt - self._emu_theta_mean[iwave])/self._emu_theta_std[iwave]]
 
@@ -377,9 +393,89 @@ class DESIspeculator(Model):
             _logflux = np.dot(layers[-1]*self._emu_pca_std[iwave] + self._emu_pca_mean[iwave], self._emu_pcas[iwave]) * self._emu_spec_std[iwave] + self._emu_spec_mean[iwave] + offset
             logflux.append(_logflux)
 
-        return np.exp(np.concatenate(logflux)) 
+        return np.concatenate(logflux) 
 
-    def get_SFR(self, tt, zred, dt=1.):
+    def SFH(self, tt, zred): 
+        ''' SFH for a set of parameter values `tt` and redshift `zred`
+
+        parameters
+        ----------
+        tt : array_like[Nparam,]
+           Parameter values of [log M*, b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH,
+           'dust1', 'dust2', 'dust_index']. 
+
+        zred : float
+            redshift
+
+        Returns 
+        -------
+        t : array_like[50,]
+            cosmic time linearly spaced from 0 to the age of the galaxy
+
+        sfh : array_like[50,]
+            star formation history at cosmic time t --- SFH(t) --- in units of
+            Msun/**Gyr**. np.trapz(sfh, t) == Mstar 
+        '''
+        tt = np.atleast_2d(tt)
+        tt_sfh = tt[:,1:5] # sfh basis coefficients 
+        
+        assert isinstance(zred, float)
+        tage = self.cosmo.age(zred).value # age in Gyr
+        t = np.linspace(0, tage, 50)
+        
+        # normalized basis out to t 
+        _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
+            for i in range(4)])
+
+        # caluclate normalized SFH
+        sfh = np.sum(np.array([tt_sfh[:,i] * _basis[i][None,:] for i in range(4)]), axis=0)
+
+        # multiply by stellar mass 
+        sfh*= 10**tt[:,0]
+
+        if tt.shape[0] == 1: 
+            return t, sfh[0]
+        else: 
+            return t, sfh 
+    
+    def ZH(self, tt, zred):
+        ''' metallicity history for a set of parameter values `tt` and redshift `zred`
+
+        parameters
+        ----------
+        tt : array_like[Nparam,]
+           Parameter values of [log M*, b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH,
+           'dust1', 'dust2', 'dust_index']. 
+
+        zred : float
+            redshift
+
+        Returns 
+        -------
+        t : array_like[50,]
+            cosmic time linearly spaced from 0 to the age of the galaxy
+
+        zh : array_like[50,]
+            metallicity at cosmic time t --- ZH(t) 
+        '''
+        tt = np.atleast_2d(tt)
+        tt_zh = tt[:,5:7] # zh bases 
+        
+        assert isinstance(zred, float)
+        tage = self.cosmo.age(zred).value # age in Gyr
+        t = np.linspace(0, tage, 50)
+    
+        # metallicity basis is not normalized
+        _z_basis = np.array([self._zh_basis[i](t) for i in range(2)]) 
+
+        # get metallicity history
+        zh = np.sum(np.array([tt_zh[:,i] * _z_basis[i][None,:] for i in range(2)]), axis=0) 
+        if tt.shape[0] == 1: 
+            return t, zh[0]
+        else: 
+            return t, zh 
+
+    def avgSFR(self, tt, zred, dt=1.):
         ''' given a set of parameter values `tt` and redshift `zred`, calculate
         SFR averaged over `dt` Gyr. 
 
@@ -395,58 +491,31 @@ class DESIspeculator(Model):
         dt : float
             Gyrs to average the SFHs 
         '''
-        raise ValueError("not yet tested") 
-        tt = np.atleast_2d(tt)
-        tt_sfh = tt[:,1:5] # sfh bases 
-
-        if isinstance(zred, float): 
-            zred = np.repeat(zred, tt.shape[0]) 
-        else: 
-            assert tt_sfh.shape[0] == zred.shape[0]
-
         tage = self.cosmo.age(zred).value # age in Gyr
         assert tage > dt 
-        t = np.linspace(0, tage, 50)
-        
-        # normalized basis out to t 
-        _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
-            for i in range(4)])
 
-        # caluclate normalized SFH
-        sfh = np.sum(np.array([tt_sfh[:,i] * _basis[i][None,:] for i in range(4)]), axis=0)
+        t, sfh = self.SFH(tt, zred) # get SFH 
+        sfh = np.atleast_2d(sfh) 
 
         # add up the stellar mass formed during the dt time period 
-        i_low = np.clip(np.argmin(np.abs(t - (tage - dt)), axis=0), None, 48) 
+        i_low = np.argmin(np.abs((t[-1] - t) - dt), axis=0)
+        #np.clip(np.argmin(np.abs(t - (tage - dt)), axis=0), None, 48) 
         avsfr = np.trapz(sfh[:,i_low:], t[i_low:]) / (tage - t[i_low]) / 1e9
-        avsfr *= 10**tt[:,0]
-        return np.clip(avsfr, 0, None)
+        return np.clip(avsfr, 0., None)
     
-    def get_Z_MW(self, tt, zred):
+    def Z_MW(self, tt, zred):
         ''' given theta calculate mass weighted metallicity using the ZH NMF
         bases. 
+        **NOT YET TESTED**
         '''
-        raise ValueError("not yet tested") 
-        tage = self.cosmo.age(zred).value # age in Gyr
-        t = np.linspace(0, tage, 50)
-
-        tt_sfh = tt[1:5] # sfh bases 
-        tt_zh = tt[5:7] # zh bases 
-        
-        # normalized basis 
-        _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) for i in range(4)])
-
-        # caluclate normalized SFH
-        if len(tt_sfh.shape) == 1: 
-            sfh = np.sum(np.array([tt_sfh[i] * _basis[i] for i in range(4)]), axis=0)
-        else: 
-            sfh = np.sum(np.array([tt_sfh[i][:,None] * _basis[i][None,:] for i in range(4)]), axis=0)
-        
-        _z_basis = np.array([self._zh_basis[i](t) for i in range(2)]) 
-        zh = np.sum(np.array([tt_zh[i][:,None] * _z_basis[i][None,:] for i in range(2)]), axis=0)
-        
+        tt = np.atleast_2d(tt) 
+        t, sfh = self.SFH(tt, zred) # get SFH 
+        _, zh = self.ZH(tt, zred) 
+    
         # mass weighted average
-        z_mw = np.trapz(zh * sfh, t) / np.trapz(sfh, t)
-        return np.clip(np.atleast_1d(z_mw), 0, np.inf)
+        z_mw = np.trapz(zh * sfh, t) / tt[:,0] # np.trapz(sfh, t) should equal tt[:,0] 
+
+        return np.clip(z_mw, 0, np.inf)
 
     def _init_model(self): 
         ''' initialize the Speculator model 
@@ -484,10 +553,10 @@ class DESIspeculator(Model):
 
         self._emu_n_layers = []
 
-        for i in range(3): # wavelength bins
+        for i, npca in enumerate([50, 30, 30]): # wavelength bins
             fpkl = open(os.path.join(
                 os.path.dirname(os.path.realpath(__file__)), 'dat', 
-                'DESI.complexdust.Ntrain5e6.pca50.4x256.wave%i.pkl' % i), 'rb') 
+                'DESI.complexdust.Ntrain5e6.pca%i.4x256.wave%i.pkl' % (npca, i)), 'rb') 
             params = pickle.load(fpkl)
             fpkl.close()
 
