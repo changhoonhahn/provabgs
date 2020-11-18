@@ -273,10 +273,11 @@ class DESIspeculator(Model):
     * Alsing et al.(2020) 
 
 
-    Notes
-    -----
+    Dev. Notes
+    ----------
     * Nov 17, 2020: Tested `self._emulator` against DESI speculator training
       data and found good agreement. 
+    * Nov 18, 2020: Tested `self.SFH`, `self.avgSFR`, `self.ZH`, `self.Z_MW`
 
     '''
     def __init__(self, cosmo=None): 
@@ -285,32 +286,40 @@ class DESIspeculator(Model):
         # load NMF SFH and ZH bases 
         self._load_NMF_bases()
 
-    def sed(self, tt, zred, wavelength=None, debug=False): 
-        ''' compute the SED for a given set of parameter values and redshift.
+    def sed(self, tt, zred, wavelength=None, filters=None, debug=False): 
+        ''' compute the redshifted spectral energy distribution (SED) for a given set of parameter values and redshift.
        
 
-        parameters
+        Parameters
         ----------
-        tt : np.ndarray
-            array of parameter values. 
+        tt : array_like[Nsample,Nparam] 
+            Parameter values that correspond to [log M*, b1SFH, b2SFH, b3SFH,
+            b4SFH, g1ZH, g2ZH, 'dust1', 'dust2', 'dust_index']. 
     
-        zred : float, array 
-            redshift 
+        zred : float or array_like
+            redshift of the SED 
 
-        wavelength : np.ndarray 
-            If specified, the model will interpolate the spectra to the specified 
-            wavelengths.(default: None)  
+        wavelength : array_like[Nwave,]
+            If you want to use your own wavelength. If specified, the model
+            will interpolate the spectra to the specified wavelengths. By
+            default, it will use the speculator wavelength
+            (Default: None)  
+    
+        filters : object
+            Photometric bandpass filter to generate photometry.
+            `speclite.FilterResponse` object. 
 
-        debug: bool
+        debug: boolean
             If True, prints out a number lines to help debugging 
 
 
-        returns
+        Returns
         -------
-        tuple
-            (outwave, outspec). outwave is an array of the output wavelenghts in
-            Angstroms. outspec is an array of the redshifted output SED in units of 
-            1e-17 * erg/s/cm^2/Angstrom
+        outwave : [Nsample, Nwave]
+            output wavelengths in angstrom. 
+
+        outspec : [Nsample, Nwave]
+            the redshifted SED in units of 1e-17 * erg/s/cm^2/Angstrom.
         '''
         tt      = np.atleast_2d(tt)
         zred    = np.atleast_1d(zred) 
@@ -345,14 +354,23 @@ class DESIspeculator(Model):
             w_z = self._emu_waves * (1. + _zred)
             d_lum = self._d_lum_z_interp(_zred) 
             flux_z = lum_ssp * UT.Lsun() / (4. * np.pi * d_lum**2) / (1. + _zred) * 1e17 # 10^-17 ergs/s/cm^2/Ang
-
+            
             if wavelength is None: 
                 outwave.append(w_z)
                 outspec.append(flux_z)
             else: 
                 outwave.append(wavelength)
                 outspec.append(np.interp(outwave, w_z, flux_z, left=0, right=0))
-        return np.array(outwave), np.array(outspec)
+
+        if filters is None: 
+            return np.array(outwave), np.array(outspec)
+        else: 
+            # calculate photometry from SEDs 
+            maggies = filters.get_ab_maggies(
+                    np.array(outspec) * 1e-17*U.erg/U.s/U.cm**2/U.Angstrom,
+                    wavelength=np.array(outwave) * U.Angstrom) 
+
+            return  np.array(outwave), np.array(outspec), maggies 
 
     def _emulator(self, tt):
         ''' forward pass through the the three speculator NN wave bins to
@@ -410,7 +428,7 @@ class DESIspeculator(Model):
         Returns 
         -------
         t : array_like[50,]
-            cosmic time linearly spaced from 0 to the age of the galaxy
+            age of the galaxy, linearly spaced from 0 to the age of the galaxy
 
         sfh : array_like[50,]
             star formation history at cosmic time t --- SFH(t) --- in units of
@@ -513,7 +531,7 @@ class DESIspeculator(Model):
         _, zh = self.ZH(tt, zred) 
     
         # mass weighted average
-        z_mw = np.trapz(zh * sfh, t) / tt[:,0] # np.trapz(sfh, t) should equal tt[:,0] 
+        z_mw = np.trapz(zh * sfh, t) / (10**tt[:,0]) # np.trapz(sfh, t) should equal tt[:,0] 
 
         return np.clip(z_mw, 0, np.inf)
 
