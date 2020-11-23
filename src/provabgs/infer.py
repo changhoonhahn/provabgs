@@ -22,7 +22,7 @@ class MCMC(object):
     def __init__(self): 
         pass
 
-    def lnPost(self, theta, *args, **kwargs, debug=False):
+    def lnPost(self, theta, *args, debug=False, **kwargs):
         ''' log Posterior of parameters `theta` 
 
 
@@ -170,7 +170,7 @@ class MCMC(object):
 
                 if self.sampler.iteration % STEP: continue
 
-                if debug: print('  chain %i' % (index+1)
+                if debug: print('  chain %i' % (index+1))
                 tau = self.sampler.get_autocorr_time(tol=0)
                 autocorr[index] = np.mean(tau)
                 index += 1
@@ -590,7 +590,7 @@ class desiMCMC(MCMC):
         return specFilter.load_filters(*tuple(bands_list))
    
 
-# priors 
+# --- priors --- 
 def load_priors(list_of_prior_obj): 
     ''' load list of `infer.Prior` class objects into a PriorSeq object
 
@@ -621,9 +621,8 @@ class PriorSeq(object):
         i = 0 
         lnp_theta = 0. 
         for prior in self.list_of_priors: 
-            _lnp_theta = prior.lnPrior(theta[:,i+i+prior.ndim]) 
-
-            if not np.isfinite(_p_theta): return -np.inf
+            _lnp_theta = prior.lnPrior(theta[:,i:i+prior.ndim]) 
+            if not np.isfinite(_lnp_theta): return -np.inf
             
             lnp_theta += _lnp_theta 
             i += prior.ndim
@@ -661,7 +660,6 @@ class PriorSeq(object):
         # update list 
         self.labels = np.array([prior.label for prior in self.list_of_priors]) 
         return None 
-
 
 
 class Prior(object): 
@@ -718,7 +716,7 @@ class FlatDirichletPrior(Prior):
         '''
         tt      = np.atleast_2d(tt)
         assert self.ndim == tt.shape[1]
-        tt_d    = np.empty(zarr.shape) 
+        tt_d    = np.empty(tt.shape) 
     
         tt_d[:,0] = 1. - tt[:,0]
         for i in range(1,self.ndim-1): 
@@ -740,8 +738,7 @@ class FlatDirichletPrior(Prior):
         prior : float
             prior evaluated at theta
         '''
-        if np.all(theta <= self.ones(self.ndim)) and np.all(theta >=
-                self.zeros(self.ndim)): 
+        if np.all(theta <= np.ones(self.ndim)) and np.all(theta >= np.zeros(self.ndim)): 
             return 0.
         else: 
             return -np.inf
