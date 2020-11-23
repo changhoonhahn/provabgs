@@ -4,11 +4,11 @@ inference framework
 
 
 '''
+import os 
+import numpy as np 
 import emcee
 import scipy.optimize as op
 from speclite import filters as specFilter
-# --- provabgs --- 
-from .models import DESIspeculator
 
 
 class MCMC(object): 
@@ -19,8 +19,8 @@ class MCMC(object):
     prior : Prior class object
         `provabgs.infer.Prior` class object 
     '''
-    def __init__(self, prior): 
-        self.prior
+    def __init__(self): 
+        pass
 
     def lnPost(self, theta, *args, **kwargs, debug=False):
         ''' log Posterior of parameters `theta` 
@@ -60,8 +60,8 @@ class MCMC(object):
         lnpost_kwargs : dictionary
             keyward arguments for log posterior function, `self.lnPost`
         
-        prior : Prior object
-            Prior object which specifies the prior 
+        prior : PriorSeq object
+            PriorSeq object which specifies the prior. See `infer.load_priors`. 
 
         nwalkers : int
             number of mcmc walkers
@@ -326,20 +326,24 @@ class MCMC(object):
 
 
 class desiMCMC(MCMC): 
-    ''' MCMC inference for analyzing DESI spectroscopic and photometric data 
+    ''' MCMC inference object specifically designed for analyzing DESI
+    spectroscopic and photometric data.
     '''
-    def __init__(self, model=None): 
+    def __init__(self, model=None, flux_calib=None, prior=None): 
         if model is None: # default Model class object 
+            from .models import DESIspeculator
             self.model = DESIspeculator()
 
-        # initiate p(SSFR) 
-        self.ssfr_prior = None 
+        if flux_calib is None: # default FluxCalib function  
+            from .flux_calib import constant_flux_factor 
+
+        self.prior = prior 
     
     def run(self, wave_obs=None, flux_obs=None, flux_ivar_obs=None,
             photo_obs=None, photo_ivar_obs=None, zred=None, prior=None,
-            mask=None, bands=None, specphoto_calib=None, nwalkers=100,
-            burnin=100, niter=1000, maxiter=200000, opt_maxiter=100,
-            writeout=None, overwrite=False, debug=False): 
+            mask=None, bands=None, nwalkers=100, burnin=100, niter=1000,
+            maxiter=200000, opt_maxiter=100, writeout=None, overwrite=False,
+            debug=False): 
         ''' run MCMC using `emcee` to infer the posterior distribution of the
         model parameters given spectroscopy and/or photometry. The function 
         outputs a dictionary with the median theta of the posterior as well as 
@@ -365,8 +369,8 @@ class desiMCMC(MCMC):
         zred : float 
             redshift of the observations  
     
-        prior : Prior object
-            A prior object
+        prior : PriorSeq object
+            A `infer.PriorSeq` object
 
         mask : string or array_like[Nwave,]
             boolean array specifying where to mask the spectra. There are a few
@@ -379,10 +383,6 @@ class desiMCMC(MCMC):
             photometric bands of the photometry data. If 'desi', sets up
             default DESI photometric bands.  
             (Default: None)  
-
-        specphoto_calib: string
-            specifies the prescription for combining spectroscopy and
-            photometry.  
 
         nwalkers : int 
             number of walkers. 
@@ -437,6 +437,12 @@ class desiMCMC(MCMC):
         obs_data_type = self._obs_data_type(wave_obs, flux_obs, flux_ivar_obs,
                 photo_obs, photo_ivar_obs) 
 
+        if prior is not None: # update prior if specified  
+            self.prior = prior 
+    
+        assert 'sed' in self.prior.labels, 'please label which priors are for the SED'
+        assert 'flux_calib' in self.prior.labels, 'please label which priors are for the flux calibration'
+
         # check mask for spectra 
         _mask = self._check_mask(mask, wave_obs, flux_ivar_obs, zred) 
         
@@ -477,27 +483,35 @@ class desiMCMC(MCMC):
             debug=False):
         ''' calculated the log likelihood. 
         '''
-        if 'photo' in obs_data_type: 
-        # model(theta) 
-        _, flux, photo = self.model.sed(tt, zred, wavelength=wave_obs, filters=filters, debug=debug) 
-        # data - model(theta) with masking 
-        dflux = (f_fiber * flux[~mask] - flux_obs[~mask]) 
-        # calculate chi-squared for spectra
-        _chi2_spec = np.sum(dflux**2 * flux_ivar_obs[~mask]) 
-        if debug: 
-            print('iSpeculator._Chi2_spectrophoto: Spectroscopic Chi2 = %f' % _chi2_spec)
-        # data - model(theta) for photometry  
-        dphoto = (photo - photo_obs) 
-        # calculate chi-squared for photometry 
-        _chi2_photo = np.sum(dphoto**2 * photo_ivar_obs) 
-        if debug: 
-            print('iSpeculator._Chi2_spectrophoto: Photometric Chi2 = %f' % _chi2_photo)
+        # separate SED parameters from Flux Calibration parameters
+        tt_sed, tt_fcalib = self.prior.separate_theta(tt, 
+                labels=['sed', 'flux_calib'])
 
-        if debug: print('iSpeculator._Chi2_spectrophoto: total Chi2 = %f' %
-                (_chi2_spec + _chi2_photo))
+        # calculate SED model(theta) 
+        _, _flux, photo = self.model.sed(tt_sed, zred, wavelength=wave_obs, filters=filters, debug=debug) 
+
+        _chi2_spec, _chi2_photo = 0., 0.
+        if 'spec' in obs_data_type: 
+            # apply flux calibration model
+            flux = self.flux_calib(tt_fcalib, _flux) 
+
+            # data - model(theta) with masking 
+            dflux = (flux[~mask] - flux_obs[~mask]) 
+
+            # calculate chi-squared for spectra
+            _chi2_spec = np.sum(dflux**2 * flux_ivar_obs[~mask]) 
+            if debug: print('desiMCMC.lnLike: Spectroscopic Chi2 = %f' % _chi2_spec)
+
+        if 'photo' in obs_data_type: 
+            # data - model(theta) for photometry  
+            dphoto = (photo - photo_obs) 
+            # calculate chi-squared for photometry 
+            _chi2_photo = np.sum(dphoto**2 * photo_ivar_obs) 
+            if debug: print('desiMCMC.lnLike: Photometric Chi2 = %f' % _chi2_photo)
+
+        if debug: print('desiMCMC.lnLike: total Chi2 = %f' % (_chi2_spec + _chi2_photo))
 
         chi2 = _chi2_spec + _chi2_photo
-
         return -0.5 * chi2
 
     def _obs_data_type(self, wave_obs, flux_obs, flux_ivar_obs, photo_obs, photo_ivar_obs):
@@ -576,58 +590,181 @@ class desiMCMC(MCMC):
         return specFilter.load_filters(*tuple(bands_list))
    
 
-class Prior(object): 
-    ''' base class for priors 
+# priors 
+def load_priors(list_of_prior_obj): 
+    ''' load list of `infer.Prior` class objects into a PriorSeq object
+
+    ***MORE DOCUMENTATION HERE***
     '''
-    def __init__(self):
-        pass 
+    return PriorSeq(list_of_prior_obj)
 
 
-class FlatDirichletPrior(object): 
+class PriorSeq(object):
+    ''' immutable sequence of priors that are assumed to be statistically
+    independent. 
+
+    Parmaeter
+    ---------
+    list_of_priors : array_like[Npriors,]
+        list of `infer.Prior` objects
+
+    '''
+    def __init__(self, list_of_priors): 
+        self.list_of_priors = list_of_priors 
+        self.labels = np.array([prior.label for prior in self.list_of_priors]) 
+
+    def lnPrior(self, theta): 
+        ''' evaluate the log prior at theta 
+        '''
+        theta = np.atleast_2d(theta)
+
+        i = 0 
+        lnp_theta = 0. 
+        for prior in self.list_of_priors: 
+            _lnp_theta = prior.lnPrior(theta[:,i+i+prior.ndim]) 
+
+            if not np.isfinite(_p_theta): return -np.inf
+            
+            lnp_theta += _lnp_theta 
+            i += prior.ndim
+
+        return lnp_theta 
+    
+    def transform(self, tt): 
+        ''' transform theta 
+        '''
+        tt = np.atleast_2d(tt)
+        tt_p = np.empty(tt.shape) 
+
+        i = 0 
+        for prior in self.list_of_priors: 
+            tt_p[:,i:i+prior.ndim] = prior.transform(tt[:,i:i+prior.ndim])
+            i += prior.ndim
+        return tt_p 
+
+    def separate_theta(self, theta, labels=None): 
+        ''' separate theta based on label
+        '''
+        theta = np.atleast_2d(theta)
+    
+        output = [] 
+        for lbl in labels: 
+            islbl = (self.labels == lbl) 
+            output.append(theta[:,islbl])
+        return output 
+
+    def append(self, another_list_of_priors): 
+        ''' append more Prior objects to the sequence 
+        '''
+        # join list 
+        self.list_of_priors += another_list_of_priors 
+        # update list 
+        self.labels = np.array([prior.label for prior in self.list_of_priors]) 
+        return None 
+
+
+
+class Prior(object): 
+    ''' base class for prior
+    '''
+    def __init__(self, label=None):
+        self.ndim = None 
+        self.label = label 
+
+    def transform(self, tt): 
+        ''' Some priors require transforming the parameter space for sampling
+        (e.g. Dirichlet priors). For most priors, this transformation will return 
+        the same value  
+        '''
+        return tt 
+
+    def lnPrior(self, theta):
+        ''' evaluate the log prior at theta
+        '''
+        return 0.
+
+
+class FlatDirichletPrior(Prior): 
     ''' flat dirichlet prior
     '''
-    def __init__(self, ndim):
+    def __init__(self, ndim, label=None):
+        super().__init__(label=label)
         self.ndim = ndim 
-        self.alpha = [1. for i in range(ndim)] # alpha_i = 1 for flat prior 
-        self._random = np.random.mtrand.RandomState()
-        
-    def __call__(self, theta=None):
-        if theta is None:
-            return self._random.dirchlet(self.alpha)
-        else:
-            return 1 if np.sum(theta) == 1 else 0
+
+    def transform(self, tt): 
+        ''' warped manifold transformation as specified in Betancourt (2013).
+        This function transforms samples from a uniform distribution to a
+        Dirichlet distribution .
+
+        x_i = (\prod\limits_{k=1}^{i-1} z_k) * f 
+
+        f = 1 - z_i         for i < m
+        f = 1               for i = m 
+    
+        Parameters
+        ----------
+        tt : array_like[N,m]
+            N samples drawn from a m-dimensional uniform distribution 
+
+        Returns
+        -------
+        tt_d : array_like[N,m]
+            N transformed samples drawn from a m-dimensional dirichlet
+            distribution 
+
+        Reference
+        ---------
+        * Betancourt(2013) - https://arxiv.org/pdf/1010.3436.pdf
+        '''
+        tt      = np.atleast_2d(tt)
+        assert self.ndim == tt.shape[1]
+        tt_d    = np.empty(zarr.shape) 
+    
+        tt_d[:,0] = 1. - tt[:,0]
+        for i in range(1,self.ndim-1): 
+            tt_d[:,i] = np.prod(tt[:,:i], axis=1) * (1. - tt[:,i]) 
+        tt_d[:,-1] = np.prod(tt[:,:-1], axis=1) 
+        return tt_d 
+
+    def lnPrior(self, theta):
+        ''' evaluate the prior at theta. We assume theta here is
+        *untransformed* --- i.e. sampled from a uniform distribution. 
+
+        Parameters
+        ----------
+        theta : array_like[m,]
+            m-dimensional set of parameters 
+
+        Return
+        ------
+        prior : float
+            prior evaluated at theta
+        '''
+        if np.all(theta <= self.ones(self.ndim)) and np.all(theta >=
+                self.zeros(self.ndim)): 
+            return 0.
+        else: 
+            return -np.inf
     
     def append(self, *arg, **kwargs): 
         raise ValueError("appending not supproted") 
 
 
-class UniformPrior(object): 
+class UniformPrior(Prior): 
     ''' uniform tophat prior
     
-    :param min: 
-        scalar or array of min values
-    :param max: 
-        scalar or array of max values
     '''
-    
-    def __init__(self, _min, _max):
+    def __init__(self, _min, _max, label=None):
+        super().__init__(label=label)
+        
         self.min = np.atleast_1d(_min)
         self.max = np.atleast_1d(_max)
-        self.ndim = len(self.min) 
-        self._random = np.random.mtrand.RandomState()
-        assert self.min.shape == self.max.shape
+        self.ndim = self.min.shape[0]
+        assert self.min.shape[0] == self.max.shape[0]
         assert np.all(self.min < self.max)
         
-    def __call__(self, theta=None):
-        if theta is None:
-            return np.array([self._random.uniform(mi, ma) for (mi, ma) in zip(self.min, self.max)])
+    def lnPrior(self, theta):
+        if np.all(theta < self.max) and np.all(theta >= self.min): 
+            return 0.
         else:
-            return 1 if np.all(theta < self.max) and np.all(theta >= self.min) else 0
-
-    def append(self, _min, _max): 
-        self.min = np.concatenate([self.min, _min]) 
-        self.max = np.concatenate([self.max, _max]) 
-        self.ndim = len(self.min)
-        assert self.min.shape == self.max.shape
-        assert np.all(self.min < self.max)
-        return None 
+            return -np.inf

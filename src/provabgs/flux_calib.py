@@ -1,0 +1,27 @@
+'''
+
+module for spectrophotometric flux calibration 
+
+'''
+
+
+def constant_flux_factor(tt, flux): 
+    ''' flux calibration is a constant factor across all wavelenghts. This is
+    the simplest flux calibration model we have. 
+
+    Parameter
+    ---------
+    tt : array_like[1,]
+         flux calibration factor 
+
+    flux : array_like[Nwave,]
+        SED that flux calibration is being applied to. 
+    '''
+    return tt * flux 
+
+
+def constant_flux_DESI_arms(tt, flux_b, flux_r, flux_z): 
+    ''' flux calibration is a constant factor for each DESI spectrograph arm 
+    '''
+    tt_b, tt_r, tt_z = tt 
+    return tt_b * flux_b, tt_r * flux_r, tt_z * flux_z 
