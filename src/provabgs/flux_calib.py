@@ -5,6 +5,21 @@ module for spectrophotometric flux calibration
 '''
 
 
+def no_flux_factor(tt, flux): 
+    ''' flux calibration is a constant factor across all wavelenghts. This is
+    the simplest flux calibration model we have. 
+
+    Parameter
+    ---------
+    tt : array_like[1,]
+         flux calibration factor 
+
+    flux : array_like[Nwave,]
+        SED that flux calibration is being applied to. 
+    '''
+    return flux 
+
+
 def constant_flux_factor(tt, flux): 
     ''' flux calibration is a constant factor across all wavelenghts. This is
     the simplest flux calibration model we have. 
