@@ -6,6 +6,7 @@ inference framework
 '''
 import os 
 import numpy as np 
+import zeus 
 import emcee
 import scipy.optimize as op
 from speclite import filters as specFilter
@@ -42,7 +43,7 @@ class MCMC(object):
         ttheta = self.prior.transform(theta) 
     
         # calculate likelihood 
-        lnlike = self.lnLike(tt, *arg, **kwargs, debug=debug)
+        lnlike = self.lnLike(ttheta, *args, debug=debug, **kwargs)
 
         return lp  + lnlike 
     
@@ -110,11 +111,15 @@ class MCMC(object):
             # if mcmc chain file does not exist or we want to overwrite
             # initialize the walkers 
             if debug: print('--- initializing the walkers ---') 
+
+            # initialize optimiser 
+            x0 = np.mean([prior.sample() for i in range(10)], axis=0)
+            std0 = np.std([prior.sample() for i in range(10)], axis=0)
         
             _lnpost = lambda *args: -2. * self.lnPost(*args, **lnpost_kwargs) 
             min_result = op.minimize(
                     _lnpost, 
-                    0.5*(prior.max + prior.min), # guess the middle of the prior 
+                    x0, 
                     args=lnpost_args, 
                     method='Nelder-Mead', 
                     options={'maxiter': opt_maxiter}
@@ -126,8 +131,7 @@ class MCMC(object):
             self.sampler = emcee.EnsembleSampler(nwalkers, ndim, self.lnPost, 
                     args=lnpost_args, kwargs=lnpost_kwargs)
             # initial walker positions 
-            dprior = prior.max - prior.min
-            p0 = [tt0 + 1.e-4 * dprior * np.random.randn(ndim) for i in range(nwalkers)]
+            p0 = [tt0 + 1.e-4 * std0 * np.random.randn(ndim) for i in range(nwalkers)]
 
             # burn in 
             if debug: print('--- burn-in ---') 
@@ -214,7 +218,106 @@ class MCMC(object):
 
         return output 
 
-    def _save_chains(self, chain, writeout=None, overwrite=False, debug=False):
+    def _zeus(self, lnpost_args, lnpost_kwargs, prior, nwalkers=100, niter=1000,
+            burnin=100, opt_maxiter=1000, debug=False, writeout=None, overwrite=False, **kwargs): 
+        ''' sample posterior distribution using `zeus`
+    
+        
+        Parameters
+        ----------
+        lnpost_args : tuple 
+            arguments for log posterior function, `self.lnPost`
+
+        lnpost_kwargs : dictionary
+            keyward arguments for log posterior function, `self.lnPost`
+        
+        prior : PriorSeq object
+            PriorSeq object which specifies the prior. See `infer.load_priors`. 
+
+        nwalkers : int
+            number of mcmc walkers
+            (Default: 100) 
+
+        niter : int
+            number of zeus steps
+            (Default: 1000) 
+
+        debug : boolean 
+            If True, debug messages will be printed out 
+            (Default: False)  
+
+        writeout : None or str
+            name of the writeout files that will be passed into temporary saving function
+
+        overwrite : boolean 
+            Set as True if you're overwriting an exisiting MCMC. Otherwise, it
+            will append to the MCMC file. 
+
+        Notes:
+        -----
+        '''
+        self.nwalkers = nwalkers # number of walkers 
+        ndim = prior.ndim
+
+        if prior is not None: 
+            self.prior = prior
+
+        zeus_sampler = zeus.EnsembleSampler(
+                self.nwalkers,
+                prior.ndim, 
+                self.lnPost, 
+                args=lnpost_args, 
+                kwargs=lnpost_kwargs)
+
+        # initialize the walkers 
+        if debug: print('--- initializing the walkers ---') 
+
+        # initialize optimiser 
+        x0 = np.mean([prior.sample() for i in range(10)], axis=0)
+        std0 = np.std([prior.sample() for i in range(10)], axis=0)
+    
+        _lnpost = lambda *args: -2. * self.lnPost(*args, **lnpost_kwargs) 
+        min_result = op.minimize(
+                _lnpost, 
+                x0, 
+                args=lnpost_args, 
+                method='Nelder-Mead', 
+                options={'maxiter': opt_maxiter}) 
+        tt0 = min_result['x'] 
+        if debug: print('initial theta = [%s]' % ', '.join([str(_t) for _t in tt0])) 
+        # initial walker positions 
+        p0 = [tt0 + 0.1 * std0 * np.random.randn(ndim) for i in range(nwalkers)]
+        # chekc that they're within the prior
+        for i in range(nwalkers): 
+            while not np.isfinite(self.prior.lnPrior(p0[i])): 
+                p0[i] = tt0 + 1e-3 * std0 * np.random.randn(ndim)
+
+        if debug: print('--- burn-in ---') 
+        zeus_sampler.run_mcmc(p0, burnin)
+        burnin = zeus_sampler.get_chain()
+
+        if debug: print('--- running main MCMC ---') 
+        zeus_sampler = zeus.EnsembleSampler(
+                self.nwalkers,
+                prior.ndim, 
+                self.lnPost, 
+                args=lnpost_args, 
+                kwargs=lnpost_kwargs)
+        zeus_sampler.run_mcmc(burnin[-1], niter)
+        _chain = zeus_sampler.get_chain()
+                    
+        output = self._save_chains(
+            _chain,
+            lnpost_args, 
+            lnpost_kwargs, 
+            writeout=writeout,
+            overwrite=overwrite, 
+            debug=debug, 
+            **kwargs) 
+        return output 
+
+    def _save_chains(self, chain, lnpost_args, lnpost_kwargs, writeout=None,
+            overwrite=False, debug=False, **kwargs):
         ''' save MC chains to file along with other details. If file exists, it
         will append it to the hdf5 file unless `overwrite=True`. 
         '''
@@ -335,15 +438,16 @@ class desiMCMC(MCMC):
             self.model = DESIspeculator()
 
         if flux_calib is None: # default FluxCalib function  
-            from .flux_calib import constant_flux_factor 
+            from .flux_calib import no_flux_factor 
+            self.flux_calib = no_flux_factor
 
         self.prior = prior 
     
     def run(self, wave_obs=None, flux_obs=None, flux_ivar_obs=None,
             photo_obs=None, photo_ivar_obs=None, zred=None, prior=None,
-            mask=None, bands=None, nwalkers=100, burnin=100, niter=1000,
-            maxiter=200000, opt_maxiter=100, writeout=None, overwrite=False,
-            debug=False): 
+            mask=None, bands=None, sampler='emcee', nwalkers=100, niter=1000,
+            burnin=100, maxiter=200000, opt_maxiter=100, writeout=None, overwrite=False,
+            debug=False, **kwargs): 
         ''' run MCMC using `emcee` to infer the posterior distribution of the
         model parameters given spectroscopy and/or photometry. The function 
         outputs a dictionary with the median theta of the posterior as well as 
@@ -388,13 +492,13 @@ class desiMCMC(MCMC):
             number of walkers. 
             (Default: 100) 
         
-        burnin : int 
-            number of iterations for burnin. 
-            (Default: 100) 
-        
         niter : int
             number of iterations. 
             (Default: 1000) purposely set low. 
+        
+        burnin : int 
+            number of iterations for burnin. 
+            (Default: 100) 
         
         maxiter : int 
             maximum number of iterations for adaptive method. MCMC can
@@ -441,7 +545,6 @@ class desiMCMC(MCMC):
             self.prior = prior 
     
         assert 'sed' in self.prior.labels, 'please label which priors are for the SED'
-        assert 'flux_calib' in self.prior.labels, 'please label which priors are for the flux calibration'
 
         # check mask for spectra 
         _mask = self._check_mask(mask, wave_obs, flux_ivar_obs, zred) 
@@ -464,18 +567,31 @@ class desiMCMC(MCMC):
                 }
         
         # run emcee and get MCMC chains 
-        output = self._emcee(
-                lnpost_args, 
-                lnpost_kwargs, 
-                nwalkers=nwalkers,
-                burnin=burnin, 
-                niter=niter, 
-                maxiter=maxiter,
-                opt_maxiter=opt_maxiter, 
-                silent=silent,
-                writeout=writeout, 
-                overwrite=overwrite, 
-                debug=debug) 
+        if sampler == 'emcee': 
+            output = self._emcee(
+                    lnpost_args, 
+                    lnpost_kwargs, 
+                    self.prior,
+                    nwalkers=nwalkers,
+                    burnin=burnin, 
+                    niter=niter, 
+                    maxiter=maxiter,
+                    opt_maxiter=opt_maxiter, 
+                    writeout=writeout, 
+                    overwrite=overwrite, 
+                    debug=debug) 
+        elif sampler == 'zeus': 
+            output = self._zeus(
+                    lnpost_args, 
+                    lnpost_kwargs,
+                    self.prior, 
+                    nwalkers=nwalkers,
+                    burnin=burnin,
+                    niter=niter, 
+                    opt_maxiter=opt_maxiter,
+                    writeout=writeout, 
+                    overwrite=overwrite, 
+                    debug=debug)
         return output  
     
     def lnLike(self, tt, wave_obs, flux_obs, flux_ivar_obs, photo_obs,
@@ -486,14 +602,16 @@ class desiMCMC(MCMC):
         # separate SED parameters from Flux Calibration parameters
         tt_sed, tt_fcalib = self.prior.separate_theta(tt, 
                 labels=['sed', 'flux_calib'])
-
+        
         # calculate SED model(theta) 
-        _, _flux, photo = self.model.sed(tt_sed, zred, wavelength=wave_obs, filters=filters, debug=debug) 
+        _sed = self.model.sed(tt_sed, zred, wavelength=wave_obs, filters=filters, debug=debug)
+        if 'photo' in obs_data_type: _, _flux, photo = _sed
+        else: _, _flux = _sed
 
         _chi2_spec, _chi2_photo = 0., 0.
         if 'spec' in obs_data_type: 
             # apply flux calibration model
-            flux = self.flux_calib(tt_fcalib, _flux) 
+            flux = self.flux_calib(tt_fcalib, _flux).flatten()
 
             # data - model(theta) with masking 
             dflux = (flux[~mask] - flux_obs[~mask]) 
@@ -539,9 +657,10 @@ class desiMCMC(MCMC):
         ''' check that mask is sensible and mask out any parts of the 
         spectra where the ivar doesn't make sense. 
         '''
-        if mask is None: 
+        if wave_obs is None: 
+            return None 
+        elif mask is None: 
             _mask = np.zeros(len(wave_obs)).astype(bool) 
-
         elif mask == 'emline': 
             # mask 20As around emission lines.
             w_lines = np.array([3728., 4861., 5007., 6564.]) * (1. + zred) 
@@ -589,6 +708,42 @@ class desiMCMC(MCMC):
 
         return specFilter.load_filters(*tuple(bands_list))
    
+    def _save_chains(self, chain, lnpost_args, lnpost_kwargs, writeout=None,
+            overwrite=False, debug=False, **kwargs):
+        output = super()._save_chains(chain, lnpost_args, lnpost_kwargs,
+                writeout=writeout, overwrite=overwrite, debug=debug)
+
+        obs_data_type = lnpost_kwargs['obs_data_type']
+    
+        wave_obs, flux_obs, flux_ivar_obs, photo_obs, photo_ivar_obs, zred = lnpost_args
+
+        output['redshift']              = zred
+        output['wavelength_obs']        = wave_obs
+        output['flux_spec_obs']         = flux_obs
+        output['flux_ivar_spec_obs']    = flux_ivar_obs
+        output['flux_photo_obs']        = photo_obs
+        output['flux_ivar_photo_obs']   = photo_ivar_obs
+
+        # add best-fit model to output dictionary
+        ttheta = self.prior.transform(output['theta_med'])
+        tt_sed, tt_fcalib = self.prior.separate_theta(ttheta, labels=['sed', 'flux_calib'])
+        
+        # calculate SED model(theta) 
+        _sed = self.model.sed(tt_sed, zred, wavelength=wave_obs,
+                filters=lnpost_kwargs['filters'], debug=debug)
+        if 'photo' in obs_data_type: 
+            _, _flux, photo = _sed
+        else: _, _flux = _sed
+
+        if 'photo' in obs_data_type: 
+            output['flux_photo_model']  = photo
+        if 'spec' in obs_data_type: 
+            # apply flux calibration model
+            flux = self.flux_calib(tt_fcalib, _flux).flatten()
+            output['flux_spec_model']   = flux 
+
+        return output 
+
 
 # --- priors --- 
 def load_priors(list_of_prior_obj): 
@@ -611,7 +766,6 @@ class PriorSeq(object):
     '''
     def __init__(self, list_of_priors): 
         self.list_of_priors = list_of_priors 
-        self.labels = np.array([prior.label for prior in self.list_of_priors]) 
 
     def lnPrior(self, theta): 
         ''' evaluate the log prior at theta 
@@ -628,6 +782,14 @@ class PriorSeq(object):
             i += prior.ndim
 
         return lnp_theta 
+
+    def sample(self): 
+        ''' sample the prior 
+        '''
+        samp = [] 
+        for prior in self.list_of_priors: 
+            samp.append(prior.sample())
+        return np.concatenate(samp) 
     
     def transform(self, tt): 
         ''' transform theta 
@@ -645,10 +807,13 @@ class PriorSeq(object):
         ''' separate theta based on label
         '''
         theta = np.atleast_2d(theta)
-    
+
+        lbls = np.concatenate([np.repeat(prior.label, prior.ndim) 
+            for prior in self.list_of_priors]) 
+
         output = [] 
         for lbl in labels: 
-            islbl = (self.labels == lbl) 
+            islbl = (lbls == lbl) 
             output.append(theta[:,islbl])
         return output 
 
@@ -657,9 +822,16 @@ class PriorSeq(object):
         '''
         # join list 
         self.list_of_priors += another_list_of_priors 
-        # update list 
-        self.labels = np.array([prior.label for prior in self.list_of_priors]) 
         return None 
+
+    @property
+    def ndim(self): 
+        # update ndim  
+        return np.sum([prior.ndim for prior in self.list_of_priors]) 
+    
+    @property
+    def labels(self): 
+        return np.array([prior.label for prior in self.list_of_priors]) 
 
 
 class Prior(object): 
@@ -668,6 +840,7 @@ class Prior(object):
     def __init__(self, label=None):
         self.ndim = None 
         self.label = label 
+        self._random = np.random.mtrand.RandomState()
 
     def transform(self, tt): 
         ''' Some priors require transforming the parameter space for sampling
@@ -746,6 +919,9 @@ class FlatDirichletPrior(Prior):
     def append(self, *arg, **kwargs): 
         raise ValueError("appending not supproted") 
 
+    def sample(self): 
+        return np.array([self._random.uniform(0., 1.) for i in range(self.ndim)])
+
 
 class UniformPrior(Prior): 
     ''' uniform tophat prior
@@ -765,3 +941,6 @@ class UniformPrior(Prior):
             return 0.
         else:
             return -np.inf
+
+    def sample(self): 
+        return np.array([self._random.uniform(mi, ma) for (mi, ma) in zip(self.min, self.max)])
