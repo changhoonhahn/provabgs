@@ -126,7 +126,15 @@ class FSPS(Model):
                 outwave.append(wavelength)
                 outspec.append(np.interp(outwave, w_z, flux_z, left=0, right=0))
 
-        return np.array(outwave), np.array(outspec)
+        if filters is None: 
+            return np.array(outwave), np.array(outspec)
+        else: 
+            # calculate photometry from SEDs 
+            maggies = filters.get_ab_maggies(
+                    np.array(outspec) * 1e-17*U.erg/U.s/U.cm**2/U.Angstrom,
+                    wavelength=np.array(outwave) * U.Angstrom) 
+
+            return  np.array(outwave), np.array(outspec), maggies 
 
     def _fsps_nmf(self, tt): 
         ''' FSPS SPS model using NMF SFH and ZH bases with Kriek and Conroy
@@ -327,10 +335,11 @@ class DESIspeculator(Model):
 
         assert tt.shape[0] == zred.shape[0]
        
-        outwave, outspec = [], [] 
+        outwave, outspec, maggies = [], [], [] 
         for _tt, _zred in zip(tt, zred): 
             # check redshift range
             assert (_zred >= 0.) and (_zred < 0.5), "outside of 0.0 <z < 0.5"
+            assert np.isclose(np.sum(_tt[1:5]), 1.), "SFH basis coefficients should add up to 1"
 
             # get tage
             tage = self._tage_z_interp(_zred)
@@ -362,15 +371,17 @@ class DESIspeculator(Model):
                 outwave.append(wavelength)
                 outspec.append(np.interp(outwave, w_z, flux_z, left=0, right=0))
 
+            if filters is not None: 
+                # calculate photometry from SEDs 
+                _maggies = filters.get_ab_maggies(np.atleast_2d(flux_z) *
+                        1e-17*U.erg/U.s/U.cm**2/U.Angstrom, wavelength=w_z *
+                        U.Angstrom)
+                maggies.append(np.array(list(_maggies[0])) * 1e9)
+
         if filters is None: 
             return np.array(outwave), np.array(outspec)
         else: 
-            # calculate photometry from SEDs 
-            maggies = filters.get_ab_maggies(
-                    np.array(outspec) * 1e-17*U.erg/U.s/U.cm**2/U.Angstrom,
-                    wavelength=np.array(outwave) * U.Angstrom) 
-
-            return  np.array(outwave), np.array(outspec), maggies 
+            return np.array(outwave), np.array(outspec), np.array(maggies)
 
     def _emulator(self, tt):
         ''' forward pass through the the three speculator NN wave bins to
