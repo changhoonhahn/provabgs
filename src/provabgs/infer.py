@@ -110,32 +110,12 @@ class MCMC(object):
         if (writeout is None) or (not os.path.isfile(writeout)) or (overwrite): 
             # if mcmc chain file does not exist or we want to overwrite
             # initialize the walkers 
-            if debug: print('--- initializing the walkers ---') 
-
-            # initialize optimiser 
-            x0 = np.mean([prior.sample() for i in range(10)], axis=0)
-            std0 = np.std([prior.sample() for i in range(10)], axis=0)
-        
-            _lnpost = lambda *args: -2. * self.lnPost(*args, **lnpost_kwargs) 
-            min_result = op.minimize(
-                    _lnpost, 
-                    x0, 
-                    args=lnpost_args, 
-                    method='Nelder-Mead', 
-                    options={'maxiter': opt_maxiter}
-                    ) 
-            tt0 = min_result['x'] 
-            if debug: print('initial theta = [%s]' % ', '.join([str(_t) for _t in tt0])) 
-        
-            # initial sampler 
-            self.sampler = emcee.EnsembleSampler(nwalkers, ndim, self.lnPost, 
-                    args=lnpost_args, kwargs=lnpost_kwargs)
-            # initial walker positions 
-            p0 = [tt0 + 1.e-4 * std0 * np.random.randn(ndim) for i in range(nwalkers)]
+            start = self._initialize_walkers(lnpost_args, lnpost_kwargs, prior,
+                    nwalkers=nwalkers, opt_maxiter=opt_maxiter, debug=debug)
 
             # burn in 
             if debug: print('--- burn-in ---') 
-            pos, prob, state = self.sampler.run_mcmc(p0, burnin)
+            pos, prob, state = self.sampler.run_mcmc(start, burnin)
             self.sampler.reset()
 
         else: 
@@ -219,7 +199,7 @@ class MCMC(object):
         return output 
 
     def _zeus(self, lnpost_args, lnpost_kwargs, prior, nwalkers=100, niter=1000,
-            burnin=100, opt_maxiter=1000, nprocesses=1, debug=False,
+            burnin=100, opt_maxiter=1000, pool=None, debug=False,
             writeout=None, overwrite=False, **kwargs): 
         ''' sample posterior distribution using `zeus`
     
@@ -243,8 +223,8 @@ class MCMC(object):
             number of zeus steps
             (Default: 1000) 
 
-        nprocesses : int
-            number of processes. If nprocesses > 1 we use multiprocessing. 
+        pool : multiprocessing.Pool object 
+            multiprocessing.Pool object for running multiprocessing
 
         debug : boolean 
             If True, debug messages will be printed out 
@@ -261,13 +241,50 @@ class MCMC(object):
         -----
         '''
         self.nwalkers = nwalkers # number of walkers 
-        ndim = prior.ndim
 
         if prior is not None: 
             self.prior = prior
+        
+        start = self._initialize_walkers(lnpost_args, lnpost_kwargs, prior,
+                nwalkers=nwalkers, opt_maxiter=opt_maxiter, debug=debug)
 
+        if debug: print('--- burn-in ---') 
+        zeus_sampler = zeus.EnsembleSampler(
+                self.nwalkers,
+                prior.ndim, 
+                self.lnPost, 
+                args=lnpost_args, 
+                kwargs=lnpost_kwargs)
+        zeus_sampler.run_mcmc(start, burnin)
+        burnin = zeus_sampler.get_chain()
+
+        if debug: print('--- running main MCMC ---') 
+        zeus_sampler = zeus.EnsembleSampler(
+                self.nwalkers,
+                prior.ndim, 
+                self.lnPost, 
+                args=lnpost_args, 
+                kwargs=lnpost_kwargs)
+        zeus_sampler.run_mcmc(burnin[-1], niter)
+        _chain = zeus_sampler.get_chain()
+                    
+        output = self._save_chains(
+            _chain,
+            lnpost_args, 
+            lnpost_kwargs, 
+            writeout=writeout,
+            overwrite=overwrite, 
+            debug=debug, 
+            **kwargs) 
+        return output 
+
+    def _initialize_walkers(self, lnpost_args, lnpost_kwargs, prior,
+            nwalkers=100, opt_maxiter=1000, debug=False):
+        ''' initalize the walkers by minimizing the -2 * lnPost
+        '''
         # initialize the walkers 
         if debug: print('--- initializing the walkers ---') 
+        ndim = prior.ndim 
 
         # initialize optimiser 
         x0 = np.mean([prior.sample() for i in range(10)], axis=0)
@@ -288,67 +305,7 @@ class MCMC(object):
         for i in range(nwalkers): 
             while not np.isfinite(self.prior.lnPrior(p0[i])): 
                 p0[i] = tt0 + 1e-3 * std0 * np.random.randn(ndim)
-    
-        if nprocesses == 1: 
-            if debug: print('--- burn-in ---') 
-            zeus_sampler = zeus.EnsembleSampler(
-                    self.nwalkers,
-                    prior.ndim, 
-                    self.lnPost, 
-                    args=lnpost_args, 
-                    kwargs=lnpost_kwargs)
-            zeus_sampler.run_mcmc(p0, burnin)
-            burnin = zeus_sampler.get_chain()
-
-            if debug: print('--- running main MCMC ---') 
-            zeus_sampler = zeus.EnsembleSampler(
-                    self.nwalkers,
-                    prior.ndim, 
-                    self.lnPost, 
-                    args=lnpost_args, 
-                    kwargs=lnpost_kwargs)
-            zeus_sampler.run_mcmc(burnin[-1], niter)
-        else: 
-            from multiprocessing import Pool
-            print()
-            print('multiprocessing with %i processes' % nprocesses)
-            print()
-            pool = Pool(processes=nprocesses)
-            if debug: print('--- burn-in ---') 
-            with pool as pewl: 
-                zeus_sampler = zeus.EnsembleSampler(
-                        self.nwalkers,
-                        prior.ndim, 
-                        self.lnPost, 
-                        pool=pewl, 
-                        args=lnpost_args, 
-                        kwargs=lnpost_kwargs)
-                zeus_sampler.run_mcmc(p0, burnin)
-            burnin = zeus_sampler.get_chain()
-            
-            pool = Pool(processes=nprocesses)
-            if debug: print('--- running main MCMC ---') 
-            with pool as pewl: 
-                zeus_sampler = zeus.EnsembleSampler(
-                        self.nwalkers,
-                        prior.ndim, 
-                        self.lnPost, 
-                        pool=pewl, 
-                        args=lnpost_args, 
-                        kwargs=lnpost_kwargs)
-                zeus_sampler.run_mcmc(burnin[-1], niter)
-
-        _chain = zeus_sampler.get_chain()
-                    
-        output = self._save_chains(
-            _chain,
-            lnpost_args, 
-            lnpost_kwargs, 
-            writeout=writeout,
-            overwrite=overwrite, 
-            debug=debug, 
-            **kwargs) 
-        return output 
+        return p0
 
     def _save_chains(self, chain, lnpost_args, lnpost_kwargs, writeout=None,
             overwrite=False, debug=False, **kwargs):
@@ -480,7 +437,7 @@ class desiMCMC(MCMC):
     def run(self, wave_obs=None, flux_obs=None, flux_ivar_obs=None,
             photo_obs=None, photo_ivar_obs=None, zred=None, prior=None,
             mask=None, bands=None, sampler='emcee', nwalkers=100, niter=1000,
-            burnin=100, maxiter=200000, opt_maxiter=100, nprocesses=1,
+            burnin=100, maxiter=200000, opt_maxiter=100, pool=None,
             writeout=None, overwrite=False, debug=False, **kwargs): 
         ''' run MCMC using `emcee` to infer the posterior distribution of the
         model parameters given spectroscopy and/or photometry. The function 
@@ -543,9 +500,8 @@ class desiMCMC(MCMC):
             maximum number of iterations for initial optimizer. 
             (Default: 1000) 
 
-        nprocesses : int
-            number of processes. If nprocesses > 1, we use multiprocessing but
-            at the moment it takes .... longer
+        pool : multiprocessing.Pool object 
+            multiprocessing.Pool object for running multiprocessing
                     
         writeout : string 
             string specifying the output file. If specified, everything in the
@@ -575,34 +531,10 @@ class desiMCMC(MCMC):
             - output['flux_photo_data'] : flux of observed photometry 
             - output['flux_photo_viar_data'] :  inverse variance of observed photometry 
         '''
-        # check inputs
-        obs_data_type = self._obs_data_type(wave_obs, flux_obs, flux_ivar_obs,
-                photo_obs, photo_ivar_obs) 
-
-        if prior is not None: # update prior if specified  
-            self.prior = prior 
-    
-        assert 'sed' in self.prior.labels, 'please label which priors are for the SED'
-
-        # check mask for spectra 
-        _mask = self._check_mask(mask, wave_obs, flux_ivar_obs, zred) 
-        
-        # get photometric bands  
-        filters = self._get_bands(bands)
-
-        # posterior function args and kwargs
-        lnpost_args = (
-                wave_obs, 
-                flux_obs,               # 10^-17 ergs/s/cm^2/Ang
-                flux_ivar_obs,          # 1/(10^-17 ergs/s/cm^2/Ang)^2
-                photo_obs,              # nanomaggies
-                photo_ivar_obs,         # 1/nanomaggies^2
-                zred) 
-        lnpost_kwargs = {
-                'mask': _mask,          # emission line mask 
-                'filters': filters,
-                'obs_data_type': obs_data_type
-                }
+        lnpost_args, lnpost_kwargs = self._lnPost_args_kwargs(
+                wave_obs=wave_obs, flux_obs=flux_obs, flux_ivar_obs=flux_ivar_obs,
+                photo_obs=photo_obs, photo_ivar_obs=photo_ivar_obs, zred=zred,
+                prior=prior, mask=mask, bands=bands)
         
         # run emcee and get MCMC chains 
         if sampler == 'emcee': 
@@ -629,7 +561,7 @@ class desiMCMC(MCMC):
                     opt_maxiter=opt_maxiter,
                     writeout=writeout, 
                     overwrite=overwrite, 
-                    nprocesses=nprocesses,
+                    pool=pool, 
                     debug=debug)
         return output  
     
@@ -671,6 +603,41 @@ class desiMCMC(MCMC):
         chi2 = _chi2_spec + _chi2_photo
         return -0.5 * chi2
 
+    def _lnPost_args_kwargs(self, wave_obs=None, flux_obs=None, flux_ivar_obs=None,
+            photo_obs=None, photo_ivar_obs=None, zred=None, prior=None,
+            mask=None, bands=None):
+        ''' get arg and kwargs for lnPost method 
+        '''
+        # check inputs
+        obs_data_type = self._obs_data_type(wave_obs, flux_obs, flux_ivar_obs,
+                photo_obs, photo_ivar_obs) 
+
+        if prior is not None: # update prior if specified  
+            self.prior = prior 
+    
+        assert 'sed' in self.prior.labels, 'please label which priors are for the SED'
+
+        # check mask for spectra 
+        _mask = self._check_mask(mask, wave_obs, flux_ivar_obs, zred) 
+        
+        # get photometric bands  
+        filters = self._get_bands(bands)
+
+        # posterior function args and kwargs
+        lnpost_args = (
+                wave_obs, 
+                flux_obs,               # 10^-17 ergs/s/cm^2/Ang
+                flux_ivar_obs,          # 1/(10^-17 ergs/s/cm^2/Ang)^2
+                photo_obs,              # nanomaggies
+                photo_ivar_obs,         # 1/nanomaggies^2
+                zred) 
+        lnpost_kwargs = {
+                'mask': _mask,          # emission line mask 
+                'filters': filters,
+                'obs_data_type': obs_data_type
+                }
+        return lnpost_args, lnpost_kwargs
+    
     def _obs_data_type(self, wave_obs, flux_obs, flux_ivar_obs, photo_obs, photo_ivar_obs):
         ''' check the data type of the observations: spectroscopy and/or
         photometry
