@@ -313,9 +313,9 @@ class MCMC(object):
             print()
             print('multiprocessing with %i processes' % nprocesses)
             print()
-            #pool = Pool(processes=nprocesses)
+            pool = Pool(processes=nprocesses)
             if debug: print('--- burn-in ---') 
-            with Pool() as pewl: 
+            with pool as pewl: 
                 zeus_sampler = zeus.EnsembleSampler(
                         self.nwalkers,
                         prior.ndim, 
@@ -333,7 +333,7 @@ class MCMC(object):
                         self.nwalkers,
                         prior.ndim, 
                         self.lnPost, 
-                        pool=pewls, 
+                        pool=pewl, 
                         args=lnpost_args, 
                         kwargs=lnpost_kwargs)
                 zeus_sampler.run_mcmc(burnin[-1], niter)
@@ -544,7 +544,8 @@ class desiMCMC(MCMC):
             (Default: 1000) 
 
         nprocesses : int
-            number of processes. If nprocesses > 1, we use multiprocessing
+            number of processes. If nprocesses > 1, we use multiprocessing but
+            at the moment it takes .... longer
                     
         writeout : string 
             string specifying the output file. If specified, everything in the

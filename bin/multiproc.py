@@ -1,6 +1,6 @@
 '''
 
-scripts to test provabgs on nersc 
+scripts to test provabgs with multiprocessing 
 
 '''
 import time 
@@ -26,7 +26,6 @@ def multiprocessing_zeus():
    
 
     desi_mcmc = Infer.desiMCMC(prior=priors)
-    '''
     t0 = time.time()
     mcmc = desi_mcmc.run(
             wave_obs=wave[0],
@@ -40,8 +39,10 @@ def multiprocessing_zeus():
             niter=100,
             nprocesses=1, 
             debug=True)
-    print(time.time() - t0) 
-    '''
+    print()
+    print('running on serious takes %.f' % (time.time() - t0))
+    print()
+
     t0 = time.time()
     mcmc = desi_mcmc.run(
             wave_obs=wave[0],
@@ -55,7 +56,9 @@ def multiprocessing_zeus():
             niter=100,
             nprocesses=4, 
             debug=True)
-    print(time.time() - t0) 
+    print()
+    print('running on parallel takes %.f' % (time.time() - t0))
+    print()
     return None 
 
 
