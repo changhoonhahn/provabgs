@@ -7,7 +7,6 @@ module for sps models
 '''
 import os 
 import h5py 
-import fsps
 import pickle
 import numpy as np 
 from scipy.stats import sigmaclip
@@ -200,6 +199,7 @@ class FSPS(Model):
     def _init_model(self): 
         ''' initialize theta values 
         '''
+        import fsps
         if self.name == 'default': 
             self.parameters = [
                     'logmstar', 
