@@ -219,7 +219,8 @@ class MCMC(object):
         return output 
 
     def _zeus(self, lnpost_args, lnpost_kwargs, prior, nwalkers=100, niter=1000,
-            burnin=100, opt_maxiter=1000, debug=False, writeout=None, overwrite=False, **kwargs): 
+            burnin=100, opt_maxiter=1000, pool=None, debug=False,
+            writeout=None, overwrite=False, **kwargs): 
         ''' sample posterior distribution using `zeus`
     
         
@@ -262,13 +263,6 @@ class MCMC(object):
         if prior is not None: 
             self.prior = prior
 
-        zeus_sampler = zeus.EnsembleSampler(
-                self.nwalkers,
-                prior.ndim, 
-                self.lnPost, 
-                args=lnpost_args, 
-                kwargs=lnpost_kwargs)
-
         # initialize the walkers 
         if debug: print('--- initializing the walkers ---') 
 
@@ -291,19 +285,49 @@ class MCMC(object):
         for i in range(nwalkers): 
             while not np.isfinite(self.prior.lnPrior(p0[i])): 
                 p0[i] = tt0 + 1e-3 * std0 * np.random.randn(ndim)
+    
+        if pool is None: 
+            if debug: print('--- burn-in ---') 
+            zeus_sampler = zeus.EnsembleSampler(
+                    self.nwalkers,
+                    prior.ndim, 
+                    self.lnPost, 
+                    args=lnpost_args, 
+                    kwargs=lnpost_kwargs)
+            zeus_sampler.run_mcmc(p0, burnin)
+            burnin = zeus_sampler.get_chain()
 
-        if debug: print('--- burn-in ---') 
-        zeus_sampler.run_mcmc(p0, burnin)
-        burnin = zeus_sampler.get_chain()
+            if debug: print('--- running main MCMC ---') 
+            zeus_sampler = zeus.EnsembleSampler(
+                    self.nwalkers,
+                    prior.ndim, 
+                    self.lnPost, 
+                    args=lnpost_args, 
+                    kwargs=lnpost_kwargs)
+            zeus_sampler.run_mcmc(burnin[-1], niter)
+        else: 
+            if debug: print('--- burn-in ---') 
+            with pool as pewl: 
+                zeus_sampler = zeus.EnsembleSampler(
+                        self.nwalkers,
+                        prior.ndim, 
+                        self.lnPost, 
+                        pool=pewl, 
+                        args=lnpost_args, 
+                        kwargs=lnpost_kwargs)
+            zeus_sampler.run_mcmc(p0, burnin)
+            burnin = zeus_sampler.get_chain()
 
-        if debug: print('--- running main MCMC ---') 
-        zeus_sampler = zeus.EnsembleSampler(
-                self.nwalkers,
-                prior.ndim, 
-                self.lnPost, 
-                args=lnpost_args, 
-                kwargs=lnpost_kwargs)
-        zeus_sampler.run_mcmc(burnin[-1], niter)
+            if debug: print('--- running main MCMC ---') 
+            with pool as pewl: 
+                zeus_sampler = zeus.EnsembleSampler(
+                        self.nwalkers,
+                        prior.ndim, 
+                        self.lnPost, 
+                        pool=pewls, 
+                        args=lnpost_args, 
+                        kwargs=lnpost_kwargs)
+            zeus_sampler.run_mcmc(burnin[-1], niter)
         _chain = zeus_sampler.get_chain()
                     
         output = self._save_chains(
@@ -446,8 +470,8 @@ class desiMCMC(MCMC):
     def run(self, wave_obs=None, flux_obs=None, flux_ivar_obs=None,
             photo_obs=None, photo_ivar_obs=None, zred=None, prior=None,
             mask=None, bands=None, sampler='emcee', nwalkers=100, niter=1000,
-            burnin=100, maxiter=200000, opt_maxiter=100, writeout=None, overwrite=False,
-            debug=False, **kwargs): 
+            burnin=100, maxiter=200000, opt_maxiter=100, pool=None,
+            writeout=None, overwrite=False, debug=False, **kwargs): 
         ''' run MCMC using `emcee` to infer the posterior distribution of the
         model parameters given spectroscopy and/or photometry. The function 
         outputs a dictionary with the median theta of the posterior as well as 
@@ -508,6 +532,9 @@ class desiMCMC(MCMC):
         opt_maxiter : int
             maximum number of iterations for initial optimizer. 
             (Default: 1000) 
+
+        pool : 
+            Mutliprocesisng pool 
         
         writeout : string 
             string specifying the output file. If specified, everything in the
@@ -591,6 +618,7 @@ class desiMCMC(MCMC):
                     opt_maxiter=opt_maxiter,
                     writeout=writeout, 
                     overwrite=overwrite, 
+                    pool=pool,
                     debug=debug)
         return output  
     
