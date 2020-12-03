@@ -369,7 +369,7 @@ class DESIspeculator(Model):
                 outspec.append(flux_z)
             else: 
                 outwave.append(wavelength)
-                outspec.append(np.interp(outwave, w_z, flux_z, left=0, right=0))
+                outspec.append(np.interp(outwave, w_z, flux_z, left=0, right=0)[0])
 
             if filters is not None: 
                 # calculate photometry from SEDs 

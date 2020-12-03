@@ -32,7 +32,7 @@ def constant_flux_factor(tt, flux):
     flux : array_like[Nwave,]
         SED that flux calibration is being applied to. 
     '''
-    return tt * flux 
+    return tt[0] * flux 
 
 
 def constant_flux_DESI_arms(tt, flux_list):

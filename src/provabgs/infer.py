@@ -425,10 +425,14 @@ class desiMCMC(MCMC):
         if model is None: # default Model class object 
             from .models import DESIspeculator
             self.model = DESIspeculator()
+        else: 
+            self.model = model
 
         if flux_calib is None: # default FluxCalib function  
             from .flux_calib import no_flux_factor 
             self.flux_calib = no_flux_factor
+        else: 
+            self.flux_calib = flux_calib
 
         self.prior = prior 
     
@@ -569,10 +573,11 @@ class desiMCMC(MCMC):
             
             # get model fluxes for each wavelength 
             Nwaves = np.cumsum([0]+[len(_w) for _w in wave_obs]) 
-            _flux = [_flux[Nwaves[i]:Nwaves[i+1] for i in range(len(wave_obs))]] 
+            _flux = [_flux[Nwaves[i]:Nwaves[i+1]] for i in range(len(wave_obs))] 
 
         else: 
-            _sed = self.model.sed(tt_sed, zred, wavelength=wave_obs, filters=filters, debug=debug)
+            _sed = self.model.sed(tt_sed, zred,
+                    wavelength=wave_obs, filters=filters, debug=debug)
             if 'photo' in obs_data_type: _, _flux, photo = _sed
             else: _, _flux = _sed
 
