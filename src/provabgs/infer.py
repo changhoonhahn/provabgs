@@ -8,6 +8,7 @@ import os
 import numpy as np 
 import zeus 
 import emcee
+import scipy.stats as stat
 import scipy.optimize as op
 from speclite import filters as specFilter
 
@@ -199,7 +200,7 @@ class MCMC(object):
         return output 
 
     def _zeus(self, lnpost_args, lnpost_kwargs, prior, nwalkers=100, niter=1000,
-            burnin=100, opt_maxiter=1000, pool=None, debug=False,
+            burnin=100, opt_maxiter=1000, debug=False,
             writeout=None, overwrite=False, **kwargs): 
         ''' sample posterior distribution using `zeus`
     
@@ -222,9 +223,6 @@ class MCMC(object):
         niter : int
             number of zeus steps
             (Default: 1000) 
-
-        pool : multiprocessing.Pool object 
-            multiprocessing.Pool object for running multiprocessing
 
         debug : boolean 
             If True, debug messages will be printed out 
@@ -437,8 +435,8 @@ class desiMCMC(MCMC):
     def run(self, wave_obs=None, flux_obs=None, flux_ivar_obs=None,
             photo_obs=None, photo_ivar_obs=None, zred=None, prior=None,
             mask=None, bands=None, sampler='emcee', nwalkers=100, niter=1000,
-            burnin=100, maxiter=200000, opt_maxiter=100, pool=None,
-            writeout=None, overwrite=False, debug=False, **kwargs): 
+            burnin=100, maxiter=200000, opt_maxiter=100, writeout=None,
+            overwrite=False, debug=False, **kwargs): 
         ''' run MCMC using `emcee` to infer the posterior distribution of the
         model parameters given spectroscopy and/or photometry. The function 
         outputs a dictionary with the median theta of the posterior as well as 
@@ -446,13 +444,13 @@ class desiMCMC(MCMC):
 
         Parameters
         ----------
-        wave_obs : array_like[Nwave,]
-            observed wavelength
+        wave_obs : array_like[Nwave,] or list 
+            observed wavelengths. Or list of wavelengths
         
-        flux_obs : array_like[Nwave,]
-            observed flux __in units of ergs/s/cm^2/Ang__
+        flux_obs : array_like[Nwave,] or list 
+            observed flux __in units of ergs/s/cm^2/Ang__. 
 
-        flux_ivar_obs : array_like[Nwave,]
+        flux_ivar_obs : array_like[Nwave,] or [Narm, Nwave] 
             observed flux **inverse variance**. Not uncertainty!
         
         photo_obs : array_like[Nband,]
@@ -500,9 +498,6 @@ class desiMCMC(MCMC):
             maximum number of iterations for initial optimizer. 
             (Default: 1000) 
 
-        pool : multiprocessing.Pool object 
-            multiprocessing.Pool object for running multiprocessing
-                    
         writeout : string 
             string specifying the output file. If specified, everything in the
             output dictionary is written out as well as the entire MCMC chain.
@@ -536,35 +531,26 @@ class desiMCMC(MCMC):
                 photo_obs=photo_obs, photo_ivar_obs=photo_ivar_obs, zred=zred,
                 prior=prior, mask=mask, bands=bands)
         
-        # run emcee and get MCMC chains 
+        # run MCMC 
         if sampler == 'emcee': 
-            output = self._emcee(
-                    lnpost_args, 
-                    lnpost_kwargs, 
-                    self.prior,
-                    nwalkers=nwalkers,
-                    burnin=burnin, 
-                    niter=niter, 
-                    maxiter=maxiter,
-                    opt_maxiter=opt_maxiter, 
-                    writeout=writeout, 
-                    overwrite=overwrite, 
-                    debug=debug) 
+            mcmc_sampler = self._emcee
         elif sampler == 'zeus': 
-            output = self._zeus(
-                    lnpost_args, 
-                    lnpost_kwargs,
-                    self.prior, 
-                    nwalkers=nwalkers,
-                    burnin=burnin,
-                    niter=niter, 
-                    opt_maxiter=opt_maxiter,
-                    writeout=writeout, 
-                    overwrite=overwrite, 
-                    pool=pool, 
-                    debug=debug)
+            mcmc_sampler = self._zeus
+
+        output = mcmc_sampler( 
+                lnpost_args, 
+                lnpost_kwargs, 
+                self.prior,
+                nwalkers=nwalkers,
+                burnin=burnin, 
+                niter=niter, 
+                maxiter=maxiter,
+                opt_maxiter=opt_maxiter, 
+                writeout=writeout, 
+                overwrite=overwrite, 
+                debug=debug) 
         return output  
-    
+
     def lnLike(self, tt, wave_obs, flux_obs, flux_ivar_obs, photo_obs,
             photo_ivar_obs, zred, mask=None, filters=None, obs_data_type=None,
             debug=False):
@@ -575,20 +561,36 @@ class desiMCMC(MCMC):
                 labels=['sed', 'flux_calib'])
         
         # calculate SED model(theta) 
-        _sed = self.model.sed(tt_sed, zred, wavelength=wave_obs, filters=filters, debug=debug)
-        if 'photo' in obs_data_type: _, _flux, photo = _sed
-        else: _, _flux = _sed
+        if isinstance(wave_obs, list): 
+            # list of wavelengths are provided e.g. b, r, z spectrograph
+            _sed = self.model.sed(tt_sed, zred, wavelength=np.concatenate(wave_obs), filters=filters, debug=debug)
+            if 'photo' in obs_data_type: _, _flux, photo = _sed
+            else: _, _flux = _sed
+            
+            # get model fluxes for each wavelength 
+            Nwaves = np.cumsum([0]+[len(_w) for _w in wave_obs]) 
+            _flux = [_flux[Nwaves[i]:Nwaves[i+1] for i in range(len(wave_obs))]] 
+
+        else: 
+            _sed = self.model.sed(tt_sed, zred, wavelength=wave_obs, filters=filters, debug=debug)
+            if 'photo' in obs_data_type: _, _flux, photo = _sed
+            else: _, _flux = _sed
 
         _chi2_spec, _chi2_photo = 0., 0.
         if 'spec' in obs_data_type: 
             # apply flux calibration model
-            flux = self.flux_calib(tt_fcalib, _flux).flatten()
+            flux = self.flux_calib(tt_fcalib, _flux)
 
             # data - model(theta) with masking 
-            dflux = (flux[~mask] - flux_obs[~mask]) 
+            if isinstance(wave_obs, list): 
+                dflux = (np.concatenate(flux)[~mask] - np.concatenate(flux_obs)[~mask]) 
+                flux_ivar_obs = np.concatenate(flux_ivar_obs) 
+            else: 
+                dflux = (flux[~mask] - flux_obs[~mask]) 
 
             # calculate chi-squared for spectra
             _chi2_spec = np.sum(dflux**2 * flux_ivar_obs[~mask]) 
+
             if debug: print('desiMCMC.lnLike: Spectroscopic Chi2 = %f' % _chi2_spec)
 
         if 'photo' in obs_data_type: 
@@ -950,3 +952,22 @@ class UniformPrior(Prior):
 
     def sample(self): 
         return np.array([self._random.uniform(mi, ma) for (mi, ma) in zip(self.min, self.max)])
+
+
+class GaussianPrior(Prior): 
+    ''' Gaussian prior 
+    '''
+    def __init__(self, mean, covariance, label=None):
+        super().__init__(label=label)
+        
+        self.mean = np.atleast_1d(mean)
+        self.covariance = np.atleast_1d(covariance)
+        self.ndim = self.mean.shape[0]
+        assert self.mean.shape[0] == self.covariance.shape[0]
+        self.multinorm = stat.multivariate_normal(self.mean, self.covariance)
+    
+    def lnPrior(self, theta):
+        return self.multinorm.logpdf(theta) 
+
+    def sample(self): 
+        return np.atleast_1d(self.multinorm.rvs())
