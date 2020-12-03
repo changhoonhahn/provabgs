@@ -35,8 +35,9 @@ def constant_flux_factor(tt, flux):
     return tt * flux 
 
 
-def constant_flux_DESI_arms(tt, flux_b, flux_r, flux_z): 
+def constant_flux_DESI_arms(tt, flux_list):
     ''' flux calibration is a constant factor for each DESI spectrograph arm 
     '''
     tt_b, tt_r, tt_z = tt 
-    return tt_b * flux_b, tt_r * flux_r, tt_z * flux_z 
+    flux_b, flux_r, flux_z = flux_list 
+    return [tt_b * flux_b, tt_r * flux_r, tt_z * flux_z]
