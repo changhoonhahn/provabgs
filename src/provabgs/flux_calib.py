@@ -3,6 +3,7 @@
 module for spectrophotometric flux calibration 
 
 '''
+import numpy as np 
 
 
 def no_flux_factor(tt, flux): 
@@ -32,7 +33,7 @@ def constant_flux_factor(tt, flux):
     flux : array_like[Nwave,]
         SED that flux calibration is being applied to. 
     '''
-    return tt[0] * flux 
+    return tt * flux 
 
 
 def constant_flux_DESI_arms(tt, flux_list):
@@ -40,4 +41,4 @@ def constant_flux_DESI_arms(tt, flux_list):
     '''
     tt_b, tt_r, tt_z = tt 
     flux_b, flux_r, flux_z = flux_list 
-    return [tt_b * flux_b, tt_r * flux_r, tt_z * flux_z]
+    return np.concatenate([tt_b * flux_b, tt_r * flux_r, tt_z * flux_z])

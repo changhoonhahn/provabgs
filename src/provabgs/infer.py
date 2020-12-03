@@ -565,33 +565,21 @@ class desiMCMC(MCMC):
                 labels=['sed', 'flux_calib'])
         
         # calculate SED model(theta) 
-        if isinstance(wave_obs, list): 
-            # list of wavelengths are provided e.g. b, r, z spectrograph
-            _sed = self.model.sed(tt_sed, zred, wavelength=np.concatenate(wave_obs), filters=filters, debug=debug)
-            if 'photo' in obs_data_type: _, _flux, photo = _sed
-            else: _, _flux = _sed
-            
-            # get model fluxes for each wavelength 
-            Nwaves = np.cumsum([0]+[len(_w) for _w in wave_obs]) 
-            _flux = [_flux[Nwaves[i]:Nwaves[i+1]] for i in range(len(wave_obs))] 
-
-        else: 
-            _sed = self.model.sed(tt_sed, zred,
-                    wavelength=wave_obs, filters=filters, debug=debug)
-            if 'photo' in obs_data_type: _, _flux, photo = _sed
-            else: _, _flux = _sed
+        _sed = self.model.sed(tt_sed, zred,
+                wavelength=wave_obs, filters=filters, debug=debug)
+        if 'photo' in obs_data_type: _, _flux, photo = _sed
+        else: _, _flux = _sed
 
         _chi2_spec, _chi2_photo = 0., 0.
         if 'spec' in obs_data_type: 
             # apply flux calibration model
+            if self._Nbins is not None: 
+                Nwaves = np.cumsum([0]+self._Nbins) 
+                _flux = [_flux[Nwaves[i]:Nwaves[i+1]] for i in range(len(self._Nbins))] 
             flux = self.flux_calib(tt_fcalib, _flux)
 
             # data - model(theta) with masking 
-            if isinstance(wave_obs, list): 
-                dflux = (np.concatenate(flux)[~mask] - np.concatenate(flux_obs)[~mask]) 
-                flux_ivar_obs = np.concatenate(flux_ivar_obs) 
-            else: 
-                dflux = (flux[~mask] - flux_obs[~mask]) 
+            dflux = (flux[~mask] - flux_obs[~mask]) 
 
             # calculate chi-squared for spectra
             _chi2_spec = np.sum(dflux**2 * flux_ivar_obs[~mask]) 
@@ -613,7 +601,7 @@ class desiMCMC(MCMC):
     def _lnPost_args_kwargs(self, wave_obs=None, flux_obs=None, flux_ivar_obs=None,
             photo_obs=None, photo_ivar_obs=None, zred=None, prior=None,
             mask=None, bands=None):
-        ''' get arg and kwargs for lnPost method 
+        ''' preprocess all the inputs and get arg and kwargs for lnPost method 
         '''
         # check inputs
         obs_data_type = self._obs_data_type(wave_obs, flux_obs, flux_ivar_obs,
@@ -623,6 +611,19 @@ class desiMCMC(MCMC):
             self.prior = prior 
     
         assert 'sed' in self.prior.labels, 'please label which priors are for the SED'
+
+        if isinstance(wave_obs, list): 
+            # if separate wavelength bins are provided in a list (e.g.
+            # different arms fo the spectrograph) 
+            
+            # save the bin sizes for flux calibrating the fluxes separately 
+            self._Nbins = [len(_w) for _w in wave_obs]
+
+            wave_obs = np.concatenate(wave_obs) 
+            flux_obs = np.concatenate(flux_obs) 
+            flux_ivar_obs = np.concatenate(flux_ivar_obs) 
+        else:
+            self._Nbins = None 
 
         # check mask for spectra 
         _mask = self._check_mask(mask, wave_obs, flux_ivar_obs, zred) 
@@ -752,6 +753,9 @@ class desiMCMC(MCMC):
             output['flux_photo_model']  = photo
         if 'spec' in obs_data_type: 
             # apply flux calibration model
+            if self._Nbins is not None: 
+                Nwaves = np.cumsum([0]+self._Nbins) 
+                _flux = [_flux[Nwaves[i]:Nwaves[i+1]] for i in range(len(self._Nbins))] 
             flux = self.flux_calib(tt_fcalib, _flux).flatten()
             output['flux_spec_model']   = flux 
 
@@ -807,28 +811,25 @@ class PriorSeq(object):
     def transform(self, tt): 
         ''' transform theta 
         '''
-        tt = np.atleast_2d(tt)
         tt_p = np.empty(tt.shape) 
 
         i = 0 
         for prior in self.list_of_priors: 
-            tt_p[:,i:i+prior.ndim] = prior.transform(tt[:,i:i+prior.ndim])
+            tt_p[i:i+prior.ndim] = prior.transform(tt[i:i+prior.ndim])
             i += prior.ndim
         return tt_p 
 
     def separate_theta(self, theta, labels=None): 
         ''' separate theta based on label
         '''
-        theta = np.atleast_2d(theta)
-
         lbls = np.concatenate([np.repeat(prior.label, prior.ndim) 
             for prior in self.list_of_priors]) 
 
         output = [] 
         for lbl in labels: 
             islbl = (lbls == lbl) 
-            output.append(theta[:,islbl])
-        return output 
+            output.append(theta[islbl])
+        return output
 
     def append(self, another_list_of_priors): 
         ''' append more Prior objects to the sequence 
