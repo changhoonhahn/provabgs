@@ -21,7 +21,10 @@ CLASSIFIERS = [
 ]
 INSTALL_REQUIRES = [
         "numpy>1.18",
-        "h5py>=2.10"
+        "h5py>=2.10",
+        "speclite",
+        "zeus-mcmc", 
+        "emcee"
 ]
 # END PROJECT SPECIFIC
 
