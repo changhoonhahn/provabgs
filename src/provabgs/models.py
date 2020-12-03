@@ -438,7 +438,7 @@ class DESIspeculator(Model):
 
         parameters
         ----------
-        tt : array_like[Nparam,]
+        tt : array_like[N,Nparam]
            Parameter values of [log M*, b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH,
            'dust1', 'dust2', 'dust_index']. 
 
@@ -450,7 +450,7 @@ class DESIspeculator(Model):
         t : array_like[50,]
             age of the galaxy, linearly spaced from 0 to the age of the galaxy
 
-        sfh : array_like[50,]
+        sfh : array_like[N,50]
             star formation history at cosmic time t --- SFH(t) --- in units of
             Msun/**Gyr**. np.trapz(sfh, t) == Mstar 
         '''
@@ -466,10 +466,10 @@ class DESIspeculator(Model):
             for i in range(4)])
 
         # caluclate normalized SFH
-        sfh = np.sum(np.array([tt_sfh[:,i] * _basis[i][None,:] for i in range(4)]), axis=0)
+        sfh = np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] for i in range(4)]), axis=0)
 
         # multiply by stellar mass 
-        sfh*= 10**tt[:,0]
+        sfh*= 10**tt[:,0][:,None]
 
         if tt.shape[0] == 1: 
             return t, sfh[0]
@@ -481,7 +481,7 @@ class DESIspeculator(Model):
 
         parameters
         ----------
-        tt : array_like[Nparam,]
+        tt : array_like[N,Nparam]
            Parameter values of [log M*, b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH,
            'dust1', 'dust2', 'dust_index']. 
 
@@ -493,7 +493,7 @@ class DESIspeculator(Model):
         t : array_like[50,]
             cosmic time linearly spaced from 0 to the age of the galaxy
 
-        zh : array_like[50,]
+        zh : array_like[N,50]
             metallicity at cosmic time t --- ZH(t) 
         '''
         tt = np.atleast_2d(tt)
@@ -507,13 +507,13 @@ class DESIspeculator(Model):
         _z_basis = np.array([self._zh_basis[i](t) for i in range(2)]) 
 
         # get metallicity history
-        zh = np.sum(np.array([tt_zh[:,i] * _z_basis[i][None,:] for i in range(2)]), axis=0) 
+        zh = np.sum(np.array([tt_zh[:,i][:,None] * _z_basis[i][None,:] for i in range(2)]), axis=0) 
         if tt.shape[0] == 1: 
             return t, zh[0]
         else: 
             return t, zh 
 
-    def avgSFR(self, tt, zred, dt=1.):
+    def avgSFR(self, tt, zred, dt=1., method='trapz'):
         ''' given a set of parameter values `tt` and redshift `zred`, calculate
         SFR averaged over `dt` Gyr. 
 
@@ -529,16 +529,28 @@ class DESIspeculator(Model):
         dt : float
             Gyrs to average the SFHs 
         '''
-        tage = self.cosmo.age(zred).value # age in Gyr
-        assert tage > dt 
-
         t, sfh = self.SFH(tt, zred) # get SFH 
-        sfh = np.atleast_2d(sfh) 
+        assert t[-1] > dt # check that the age of the galaxy is longer than the timescale 
+        sfh = np.atleast_2d(sfh) / 1e9 # in units of 10^9 Msun 
+
+        # linearly interpolate SFH at tage - dt  
+        tlookback = t[-1] - t # look back time 
+        i0 = np.where(tlookback < dt)[0][0]  
+        i1 = np.where(tlookback > dt)[0][-1]
+
+        sfh_t_dt = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (dt - tlookback[i0]) + sfh[:,i0]
+    
+        _t = np.concatenate([[dt], tlookback[i0:]]) 
+        _sfh = np.concatenate([sfh_t_dt[:,None], sfh[:,i0:]], axis=1)
 
         # add up the stellar mass formed during the dt time period 
-        i_low = np.argmin(np.abs((t[-1] - t) - dt), axis=0)
-        #np.clip(np.argmin(np.abs(t - (tage - dt)), axis=0), None, 48) 
-        avsfr = np.trapz(sfh[:,i_low:], t[i_low:]) / (tage - t[i_low]) / 1e9
+        if method == 'trapz': 
+            avsfr = np.trapz(_sfh[::-1], _t[::-1]) / dt
+        elif method == 'simps': 
+            from scipy.intergrate import simps
+            avsfr = simps(_sfh[::-1], _t[::-1]) / dt
+        else: 
+            raise NotImplementedError
         return np.clip(avsfr, 0., None)
     
     def Z_MW(self, tt, zred):

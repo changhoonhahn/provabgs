@@ -171,31 +171,38 @@ class MCMC(object):
                 old_tau = tau
                 
                 _chain = self.sampler.get_chain()
+                # apply prior transform (e.g. this would transform SFH bases into
+                # Dirichlet priors) 
+                chain = self.prior.transform(_chain[_niter:,:,:])
 
                 # write out incrementally
                 output = self._save_chains(
-                    _chain[_niter:,:,:], 
-                    lnpost_args, 
-                    lnpost_kwargs,
-                    writeout=writeout,
-                    overwrite=[False, overwrite][overwrite & (index == 1)],
-                    debug=debug, 
-                    **kwargs) 
+                        chain, 
+                        lnpost_args, 
+                        lnpost_kwargs,
+                        writeout=writeout,
+                        overwrite=[False, overwrite][overwrite & (index == 1)],
+                        debug=debug, 
+                        **kwargs) 
                 _niter = _chain.shape[0]
         else:
             # run standard mcmc with niter iterations 
             assert isinstance(niter, int) 
             self.sampler.run_mcmc(pos, niter)
             _chain = self.sampler.get_chain()
-                    
+
+            # apply prior transform (e.g. this would transform SFH bases into
+            # Dirichlet priors) 
+            chain = self.prior.transform(_chain)
+
             output = self._save_chains(
-                _chain,
-                lnpost_args, 
-                lnpost_kwargs, 
-                writeout=writeout,
-                overwrite=overwrite, 
-                debug=debug, 
-                **kwargs) 
+                    chain,
+                    lnpost_args, 
+                    lnpost_kwargs, 
+                    writeout=writeout,
+                    overwrite=overwrite, 
+                    debug=debug, 
+                    **kwargs) 
 
         return output 
 
@@ -242,6 +249,7 @@ class MCMC(object):
 
         if prior is not None: 
             self.prior = prior
+        self.ndim = self.prior.ndim
         
         start = self._initialize_walkers(lnpost_args, lnpost_kwargs, prior,
                 nwalkers=nwalkers, opt_maxiter=opt_maxiter, debug=debug)
@@ -249,7 +257,7 @@ class MCMC(object):
         if debug: print('--- burn-in ---') 
         zeus_sampler = zeus.EnsembleSampler(
                 self.nwalkers,
-                prior.ndim, 
+                self.ndim, 
                 self.lnPost, 
                 args=lnpost_args, 
                 kwargs=lnpost_kwargs)
@@ -259,21 +267,25 @@ class MCMC(object):
         if debug: print('--- running main MCMC ---') 
         zeus_sampler = zeus.EnsembleSampler(
                 self.nwalkers,
-                prior.ndim, 
+                self.ndim, 
                 self.lnPost, 
                 args=lnpost_args, 
                 kwargs=lnpost_kwargs)
         zeus_sampler.run_mcmc(burnin[-1], niter)
         _chain = zeus_sampler.get_chain()
+    
+        # apply prior transform (e.g. this would transform SFH bases into
+        # Dirichlet priors) 
+        chain = self.prior.transform(_chain)
                     
         output = self._save_chains(
-            _chain,
-            lnpost_args, 
-            lnpost_kwargs, 
-            writeout=writeout,
-            overwrite=overwrite, 
-            debug=debug, 
-            **kwargs) 
+                chain, 
+                lnpost_args, 
+                lnpost_kwargs, 
+                writeout=writeout,
+                overwrite=overwrite, 
+                debug=debug, 
+                **kwargs) 
         return output 
 
     def _initialize_walkers(self, lnpost_args, lnpost_kwargs, prior,
@@ -555,6 +567,11 @@ class desiMCMC(MCMC):
                 debug=debug) 
         return output  
 
+    def restart(self, fmcmc): 
+        ''' restart mcmc chain from mcmc file 
+        '''
+        return None 
+
     def lnLike(self, tt, wave_obs, flux_obs, flux_ivar_obs, photo_obs,
             photo_ivar_obs, zred, mask=None, filters=None, obs_data_type=None,
             debug=False):
@@ -742,7 +759,6 @@ class desiMCMC(MCMC):
         ttheta = self.prior.transform(output['theta_med'])
         tt_sed, tt_fcalib = self.prior.separate_theta(ttheta, labels=['sed', 'flux_calib'])
         
-        # calculate SED model(theta) 
         _sed = self.model.sed(tt_sed, zred, wavelength=wave_obs,
                 filters=lnpost_kwargs['filters'], debug=debug)
         if 'photo' in obs_data_type: 
@@ -759,8 +775,16 @@ class desiMCMC(MCMC):
             flux = self.flux_calib(tt_fcalib, _flux).flatten()
             output['flux_spec_model']   = flux 
 
-        return output 
+        if writeout is not None: 
+            # append the extra columns to file 
+            mcmc = h5py.File(writeout, 'a') 
 
+            for k in output.keys(): 
+                if k not in mcmc.keys(): 
+                    mcmc.create_dataset(k, data=output[k]) 
+            mcmc.close() 
+        return output 
+    
 
 # --- priors --- 
 def load_priors(list_of_prior_obj): 
@@ -815,7 +839,7 @@ class PriorSeq(object):
 
         i = 0 
         for prior in self.list_of_priors: 
-            tt_p[i:i+prior.ndim] = prior.transform(tt[i:i+prior.ndim])
+            tt_p[...,i:i+prior.ndim] = prior.transform(tt[...,i:i+prior.ndim])
             i += prior.ndim
         return tt_p 
 
@@ -901,14 +925,13 @@ class FlatDirichletPrior(Prior):
         ---------
         * Betancourt(2013) - https://arxiv.org/pdf/1010.3436.pdf
         '''
-        tt      = np.atleast_2d(tt)
-        assert self.ndim == tt.shape[1]
+        assert self.ndim == tt.shape[-1]
         tt_d    = np.empty(tt.shape) 
     
-        tt_d[:,0] = 1. - tt[:,0]
+        tt_d[...,0] = 1. - tt[...,0]
         for i in range(1,self.ndim-1): 
-            tt_d[:,i] = np.prod(tt[:,:i], axis=1) * (1. - tt[:,i]) 
-        tt_d[:,-1] = np.prod(tt[:,:-1], axis=1) 
+            tt_d[...,i] = np.prod(tt[...,:i], axis=-1) * (1. - tt[...,i]) 
+        tt_d[...,-1] = np.prod(tt[...,:-1], axis=-1) 
         return tt_d 
 
     def lnPrior(self, theta):
