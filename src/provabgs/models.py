@@ -378,10 +378,19 @@ class DESIspeculator(Model):
                         U.Angstrom)
                 maggies.append(np.array(list(_maggies[0])) * 1e9)
 
-        if filters is None: 
-            return np.array(outwave), np.array(outspec)
+        if len(outwave) == 1: 
+            outwave = outwave[0] 
+            outspec = outspec[0] 
+            if filters is not None: maggies = maggies[0]
         else: 
-            return np.array(outwave), np.array(outspec), np.array(maggies)
+            outwave = np.array(outwave)
+            outspec = np.array(outspec) 
+            if filters is not None: maggies = np.array(maggies)
+
+        if filters is None: 
+            return outwave, outspec
+        else: 
+            return outwave, outspec, maggies
 
     def _emulator(self, tt):
         ''' forward pass through the the three speculator NN wave bins to
