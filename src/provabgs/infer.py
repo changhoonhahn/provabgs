@@ -5,6 +5,7 @@ inference framework
 
 '''
 import os 
+import h5py 
 import numpy as np 
 import zeus 
 import emcee
@@ -251,7 +252,7 @@ class MCMC(object):
             self.prior = prior
         self.ndim = self.prior.ndim
         
-        start = self._initialize_walkers(lnpost_args, lnpost_kwargs, prior,
+        start = self._initialize_walkers(lnpost_args, lnpost_kwargs, 
                 nwalkers=nwalkers, opt_maxiter=opt_maxiter, debug=debug)
 
         if debug: print('--- burn-in ---') 
@@ -288,17 +289,17 @@ class MCMC(object):
                 **kwargs) 
         return output 
 
-    def _initialize_walkers(self, lnpost_args, lnpost_kwargs, prior,
+    def _initialize_walkers(self, lnpost_args, lnpost_kwargs, 
             nwalkers=100, opt_maxiter=1000, debug=False):
         ''' initalize the walkers by minimizing the -2 * lnPost
         '''
         # initialize the walkers 
         if debug: print('--- initializing the walkers ---') 
-        ndim = prior.ndim 
+        ndim = self.prior.ndim 
 
         # initialize optimiser 
-        x0 = np.mean([prior.sample() for i in range(10)], axis=0)
-        std0 = np.std([prior.sample() for i in range(10)], axis=0)
+        x0 = np.mean([self.prior.sample() for i in range(10)], axis=0)
+        std0 = np.std([self.prior.sample() for i in range(10)], axis=0)
     
         _lnpost = lambda *args: -2. * self.lnPost(*args, **lnpost_kwargs) 
         min_result = op.minimize(
@@ -341,7 +342,7 @@ class MCMC(object):
             chain = np.concatenate([old_chain, chain], axis=0) 
             newfile = False
         else:   
-            if not silent: print('  writing to ... %s' % writeout)
+            if debug: print('  writing to ... %s' % writeout)
             mcmc = h5py.File(writeout, 'w')  # write 
             mcmc.create_dataset('mcmc_chain0', data=chain) # first chain 
             newfile = True
@@ -352,6 +353,7 @@ class MCMC(object):
                 [2.5, 16, 50, 84, 97.5], axis=0)
     
         output = {} 
+        output['prior_range'] = self.prior.range 
         output['theta_med'] = med 
         output['theta_1sig_plus'] = high
         output['theta_2sig_plus'] = highhigh
@@ -371,7 +373,6 @@ class MCMC(object):
             for k in output.keys(): 
                 mcmc.create_dataset(k, data=output[k]) 
         mcmc.close() 
-        output['mcmc_chain'] = chain 
         return output  
 
     def read_chain(self, fchain, flat=False, debug=False): 
@@ -402,7 +403,8 @@ class MCMC(object):
                 i_chains.append(int(k.replace('mcmc_chain', '')))
             else: 
                 mcmc[k] = chains[k][...]
-         
+        mcmc['redshift'] = float(mcmc['redshift']) 
+
         nchain = np.max(i_chains)+1 # number of chains 
         mcmc['nchain'] = nchain
 
@@ -745,7 +747,7 @@ class desiMCMC(MCMC):
                 writeout=writeout, overwrite=overwrite, debug=debug)
 
         obs_data_type = lnpost_kwargs['obs_data_type']
-    
+        
         wave_obs, flux_obs, flux_ivar_obs, photo_obs, photo_ivar_obs, zred = lnpost_args
 
         output['redshift']              = zred
@@ -756,8 +758,8 @@ class desiMCMC(MCMC):
         output['flux_ivar_photo_obs']   = photo_ivar_obs
 
         # add best-fit model to output dictionary
-        ttheta = self.prior.transform(output['theta_med'])
-        tt_sed, tt_fcalib = self.prior.separate_theta(ttheta, labels=['sed', 'flux_calib'])
+        tt_sed, tt_fcalib = self.prior.separate_theta(output['theta_med'],
+                labels=['sed', 'flux_calib'])
         
         _sed = self.model.sed(tt_sed, zred, wavelength=wave_obs,
                 filters=lnpost_kwargs['filters'], debug=debug)
@@ -780,7 +782,7 @@ class desiMCMC(MCMC):
             mcmc = h5py.File(writeout, 'a') 
 
             for k in output.keys(): 
-                if k not in mcmc.keys(): 
+                if k not in mcmc.keys() and output[k] is not None: 
                     mcmc.create_dataset(k, data=output[k]) 
             mcmc.close() 
         return output 
@@ -870,6 +872,29 @@ class PriorSeq(object):
     @property
     def labels(self): 
         return np.array([prior.label for prior in self.list_of_priors]) 
+
+    @property 
+    def range(self): 
+        ''' range of the priors 
+        '''
+        prior_min, prior_max = [], [] 
+        for prior in self.list_of_priors: 
+            if isinstance(prior, UniformPrior): 
+                _min = prior.min
+                _max = prior.max 
+            elif isinstance(prior, FlatDirichletPrior): 
+                _min = np.zeros(prior.ndim) 
+                _max = np.ones(prior.ndim) 
+            elif isinstance(prior, GaussianPrior): 
+                _min = prior.mean - 3.* np.sqrt(np.diag(prior.covariance)) 
+                _max = prior.mean + 3.* np.sqrt(np.diag(prior.covariance)) 
+            else: 
+                raise ValueError
+            prior_min.append(np.atleast_1d(_min))
+            prior_max.append(np.atleast_1d(_max)) 
+        prior_min = np.concatenate(prior_min) 
+        prior_max = np.concatenate(prior_max) 
+        return prior_min, prior_max
 
 
 class Prior(object): 
