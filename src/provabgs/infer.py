@@ -319,6 +319,10 @@ class MCMC(object):
         ''' save MC chains to file along with other details. If file exists, it
         will append it to the hdf5 file unless `overwrite=True`. 
         '''
+        # apply prior transform (e.g. this would transform SFH bases into
+        # Dirichlet priors) 
+        t_chain = self.prior.transform(chain)
+
         if writeout is None: 
             pass
         elif not overwrite and os.path.isfile(writeout): 
@@ -341,10 +345,6 @@ class MCMC(object):
                 newfile = False
             '''
         else:   
-            # apply prior transform (e.g. this would transform SFH bases into
-            # Dirichlet priors) 
-            t_chain = self.prior.transform(chain)
-
             if debug: print('  writing to ... %s' % writeout)
             mcmc = h5py.File(writeout, 'w')  # write 
             mcmc.create_dataset('mcmc_chain0', data=t_chain) # first chain 
