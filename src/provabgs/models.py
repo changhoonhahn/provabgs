@@ -354,7 +354,6 @@ class DESIspeculator(Model):
             
             # get SSP luminosity
             ssp_log_lum = self._emulator(tt_arr[1:]) 
-            if debug: print('Speculator.sed: log(ssp lum)', ssp_log_lum)
 
             # mass normalization
             lum_ssp = np.exp(tt_arr[0] * np.log(10) + ssp_log_lum)

@@ -274,13 +274,9 @@ class MCMC(object):
                 kwargs=lnpost_kwargs)
         zeus_sampler.run_mcmc(burnin[-1], niter)
         _chain = zeus_sampler.get_chain()
-    
-        # apply prior transform (e.g. this would transform SFH bases into
-        # Dirichlet priors) 
-        chain = self.prior.transform(_chain)
                     
         output = self._save_chains(
-                chain, 
+                _chain, 
                 lnpost_args, 
                 lnpost_kwargs, 
                 writeout=writeout,
@@ -326,25 +322,32 @@ class MCMC(object):
         if writeout is None: 
             pass
         elif not overwrite and os.path.isfile(writeout): 
-            if debug: print('--- appending to %s ---' % writeout)
+            raise NotImplementedError
+            '''
+                if debug: print('--- appending to %s ---' % writeout)
 
-            # read existing chain 
-            _mcmc = self.read_chain(writeout)  
-            old_chain = _mcmc['mcmc_chain']
+                # read existing chain 
+                _mcmc = self.read_chain(writeout)  
+                old_chain = _mcmc['mcmc_chain']
 
-            assert old_chain.shape[1] == chain.shape[1]
-            assert old_chain.shape[2] == chain.shape[2]
-            
-            # append chain to existing mcmc
-            mcmc = h5py.File(writeout, 'a')  #  append 
-            mcmc.create_dataset('mcmc_chain%i' % _mcmc['nchain'], data=chain)
+                assert old_chain.shape[1] == chain.shape[1]
+                assert old_chain.shape[2] == chain.shape[2]
+                
+                # append chain to existing mcmc
+                mcmc = h5py.File(writeout, 'a')  #  append 
+                mcmc.create_dataset('mcmc_chain%i' % _mcmc['nchain'], data=chain)
 
-            chain = np.concatenate([old_chain, chain], axis=0) 
-            newfile = False
+                chain = np.concatenate([old_chain, chain], axis=0) 
+                newfile = False
+            '''
         else:   
+            # apply prior transform (e.g. this would transform SFH bases into
+            # Dirichlet priors) 
+            t_chain = self.prior.transform(chain)
+
             if debug: print('  writing to ... %s' % writeout)
             mcmc = h5py.File(writeout, 'w')  # write 
-            mcmc.create_dataset('mcmc_chain0', data=chain) # first chain 
+            mcmc.create_dataset('mcmc_chain0', data=t_chain) # first chain 
             newfile = True
     
         # get summary of the posterior from *all* of the chains in file 
@@ -354,14 +357,14 @@ class MCMC(object):
     
         output = {} 
         output['prior_range'] = self.prior.range 
-        output['theta_med'] = med 
-        output['theta_1sig_plus'] = high
-        output['theta_2sig_plus'] = highhigh
-        output['theta_1sig_minus'] = low
-        output['theta_2sig_minus'] = lowlow
+        output['theta_med']         = self.prior.transform(med)
+        output['theta_1sig_plus']   = self.prior.transform(high)
+        output['theta_2sig_plus']   = self.prior.transform(highhigh)
+        output['theta_1sig_minus']  = self.prior.transform(low)
+        output['theta_2sig_minus']  = self.prior.transform(lowlow)
         
         if writeout is None:
-            output['mcmc_chain'] = chain 
+            output['mcmc_chain'] = t_chain 
             return output
 
         if not newfile: 
@@ -643,7 +646,10 @@ class desiMCMC(MCMC):
             flux_ivar_obs = np.concatenate(flux_ivar_obs) 
         else:
             self._Nbins = None 
-
+        
+        if photo_obs is not None: 
+            assert bands is not None, "specify the photometric bands (e.g.  'desi')" 
+        
         # check mask for spectra 
         _mask = self._check_mask(mask, wave_obs, flux_ivar_obs, zred) 
         
@@ -768,14 +774,14 @@ class desiMCMC(MCMC):
         else: _, _flux = _sed
 
         if 'photo' in obs_data_type: 
-            output['flux_photo_model']  = photo
+            output['flux_photo_model'] = photo
         if 'spec' in obs_data_type: 
             # apply flux calibration model
             if self._Nbins is not None: 
                 Nwaves = np.cumsum([0]+self._Nbins) 
                 _flux = [_flux[Nwaves[i]:Nwaves[i+1]] for i in range(len(self._Nbins))] 
             flux = self.flux_calib(tt_fcalib, _flux).flatten()
-            output['flux_spec_model']   = flux 
+            output['flux_spec_model'] = flux 
 
         if writeout is not None: 
             # append the extra columns to file 
