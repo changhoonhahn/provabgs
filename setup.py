@@ -22,6 +22,7 @@ CLASSIFIERS = [
 INSTALL_REQUIRES = [
         "numpy>1.18",
         "h5py>=2.10",
+        "numba", 
         "speclite",
         "zeus-mcmc", 
         "emcee"

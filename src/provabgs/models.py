@@ -294,7 +294,8 @@ class DESIspeculator(Model):
         # load NMF SFH and ZH bases 
         self._load_NMF_bases()
 
-    def sed(self, tt, zred, wavelength=None, filters=None, debug=False): 
+    def sed(self, tt, zred, vdisp=0., wavelength=None, resolution=None,
+            filters=None, debug=False): 
         ''' compute the redshifted spectral energy distribution (SED) for a given set of parameter values and redshift.
        
 
@@ -307,11 +308,17 @@ class DESIspeculator(Model):
         zred : float or array_like
             redshift of the SED 
 
+        vdisp : float or array_like
+            velocity dispersion  
+
         wavelength : array_like[Nwave,]
             If you want to use your own wavelength. If specified, the model
             will interpolate the spectra to the specified wavelengths. By
             default, it will use the speculator wavelength
             (Default: None)  
+
+        resolution : array_like[N,Nwave]
+            resolution matrix (e.g. DESI data provides a resolution matrix)  
     
         filters : object
             Photometric bandpass filter to generate photometry.
@@ -331,6 +338,7 @@ class DESIspeculator(Model):
         '''
         tt      = np.atleast_2d(tt)
         zred    = np.atleast_1d(zred) 
+        vdisp   = np.atleast_1d(vdisp) 
         ntheta  = tt.shape[1]
 
         assert tt.shape[0] == zred.shape[0]
@@ -363,12 +371,23 @@ class DESIspeculator(Model):
             d_lum = self._d_lum_z_interp(_zred) 
             flux_z = lum_ssp * UT.Lsun() / (4. * np.pi * d_lum**2) / (1. + _zred) * 1e17 # 10^-17 ergs/s/cm^2/Ang
             
+            # apply velocity dispersion 
+            wave_smooth, flux_smooth = self._apply_vdisp(w_z, flux_z, vdisp)
+            
             if wavelength is None: 
-                outwave.append(w_z)
-                outspec.append(flux_z)
+                outwave.append(wave_smooth)
+                outspec.append(flux_smooth)
             else: 
                 outwave.append(wavelength)
-                outspec.append(np.interp(outwave, w_z, flux_z, left=0, right=0)[0])
+
+                # resample flux to input wavelength  
+                resampflux = UT.trapz_rebin(wave_smooth, flux_smooth, xnew=wavelength) 
+
+                if resolution is not None: 
+                    # apply resolution matrix 
+                    res = UT.desi_Resolution(resolution) 
+                    resampflux = res.dot(resampflux) 
+                outspec.append(resampflux) 
 
             if filters is not None: 
                 # calculate photometry from SEDs 
@@ -565,6 +584,29 @@ class DESIspeculator(Model):
         z_mw = np.trapz(zh * sfh, t) / (10**tt[:,0]) # np.trapz(sfh, t) should equal tt[:,0] 
 
         return np.clip(z_mw, 0, np.inf)
+
+    def _apply_vdisp(self, wave, flux, vdisp): 
+        ''' apply velocity dispersion by first rebinning to log-scale
+        wavelength then convolving vdisp. 
+
+        Notes
+        -----
+        * code lift from https://github.com/desihub/desigal/blob/d67a4350bc38ae42cf18b2db741daa1a32511f8d/py/desigal/nyxgalaxy.py#L773
+        * confirmed that it reproduces the velocity dispersion calculations in
+        prospector
+        (https://github.com/bd-j/prospector/blob/41cbdb7e6a13572baea59b75c6c10100e7c7e212/prospect/utils/smoothing.py#L17)
+        '''
+        if vdisp <= 0: 
+            return wave, flux
+        from scipy.ndimage import gaussian_filter1d
+        pixkms = 10.0                                 # SSP pixel size [km/s]
+        dlogwave = pixkms / 2.998e5 / np.log(10)
+        wlog = 10**np.arange(np.log10(wave.min() + 10.), np.log10(wave.max() - 10.), dlogwave)
+        flux_wlog = UT.trapz_rebin(wave, flux, xnew=wlog, edges=None)
+        # convolve  
+        sigma = vdisp / pixkms # in pixels 
+        smoothflux = gaussian_filter1d(flux_wlog, sigma=sigma, axis=0)
+        return wlog, smoothflux
 
     def _init_model(self): 
         ''' initialize the Speculator model 
