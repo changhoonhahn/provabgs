@@ -6,6 +6,8 @@ some utility functions
 import os
 import numba
 import numpy as np
+import scipy.sparse
+import scipy.special
 from astropy.io import fits 
 
 
@@ -32,14 +34,105 @@ def jansky_cgs():
     return 1e-23
 
 
-def desi_Resolution(res_data): 
-    from desispec.resolution import Resolution
-    return Resolution(res_data)
-
-# --- the code below is taken from the `redrock` python package. I've copied
-# the code over instead of importing it to reduce package dependencies.
+# --- the code below is taken from the `desispec` and `redrock` python package.
+# I've copied the code over instead of importing it to reduce package
+# dependencies.
 # https://github.com/desihub/redrock/blob/8e33f642b6d8a762c4d71626fb3aca6377c976d4/py/redrock/rebin.py#L10
 # --- 
+class Resolution(scipy.sparse.dia_matrix):
+    """Canonical representation of a resolution matrix.
+    Inherits all of the method of scipy.sparse.dia_matrix, including todense()
+    for converting to a dense 2D numpy array of matrix elements, most of which
+    will be zero (so you generally want to avoid this).
+    Args:
+        data: Must be in one of the following formats listed below.
+    Options:
+        offsets: list of diagonals that the data represents.  Only used if
+            data is a 2D dense array.
+    Raises:
+        ValueError: Invalid input for initializing a sparse resolution matrix.
+    Data formats:
+    1. a scipy.sparse matrix in DIA format with the required diagonals
+       (but not necessarily in the canoncial order);
+    2. a 2D square numpy arrray (i.e., a dense matrix) whose non-zero
+       values beyond default_ndiag will be silently dropped; or
+    3. a 2D numpy array[ndiag, nwave] that encodes the sparse diagonal
+       values in the same format as scipy.sparse.dia_matrix.data .
+    The last format is the one used to store resolution matrices in FITS files.
+    """
+    def __init__(self, data, offsets=None):
+
+        #- Sanity check on length of offsets
+        if offsets is not None:
+            if len(offsets) < 3:
+                raise ValueError("Only {} resolution matrix diagonals?  That's probably way too small".format(len(offsets)))
+            if len(offsets) > 4*default_ndiag:
+                raise ValueError("{} resolution matrix diagonals?  That's probably way too big".format(len(offsets)))
+
+        if scipy.sparse.isspmatrix_dia(data):
+            # Input is already in DIA format with the required diagonals.
+            # We just need to put the diagonals in the correct order.
+            diadata, offsets = _sort_and_symmeterize(data.data, data.offsets)
+            self.offsets = offsets
+            scipy.sparse.dia_matrix.__init__(self, (diadata,offsets), data.shape)
+
+        elif isinstance(data,np.ndarray) and data.ndim == 2:
+            n1,n2 = data.shape
+            if n2 > n1:
+                ntotdiag = n1  #- rename for clarity
+                if offsets is not None:
+                    diadata, offsets = _sort_and_symmeterize(data, offsets)
+                    self.offsets = offsets
+                    scipy.sparse.dia_matrix.__init__(self, (diadata,offsets), (n2,n2))
+                elif ntotdiag%2 == 0:
+                    raise ValueError("Number of diagonals ({}) should be odd if offsets aren't included".format(ntotdiag))
+                else:
+                    #- Auto-derive offsets
+                    self.offsets = np.arange(ntotdiag//2,-(ntotdiag//2)-1,-1)
+                    scipy.sparse.dia_matrix.__init__(self,(data,self.offsets),(n2,n2))
+            elif n1 == n2:
+                if offsets is None:
+                    self.offsets = np.arange(default_ndiag//2,-(default_ndiag//2)-1,-1)
+                else:
+                    self.offsets = np.sort(offsets)[-1::-1]  #- reverse sort
+
+                sparse_data = np.zeros((len(self.offsets),n1))
+                for index,offset in enumerate(self.offsets):
+                    where =  slice(offset,None) if offset >= 0 else slice(None,offset)
+                    sparse_data[index,where] = np.diag(data,offset)
+                scipy.sparse.dia_matrix.__init__(self,(sparse_data,self.offsets),(n1,n1))
+            else:
+                raise ValueError('Cannot initialize Resolution with array shape (%d,%d)' % (n1,n2))
+
+        #- 1D data: Interpret as Gaussian sigmas in pixel units
+        elif isinstance(data, np.ndarray) and data.ndim == 1:
+            nwave = len(data)
+            rdata = np.empty((default_ndiag, nwave))
+            self.offsets = np.arange(default_ndiag//2,-(default_ndiag//2)-1,-1)
+            for i in range(nwave):
+                rdata[:, i] = np.abs(_gauss_pix(self.offsets, sigma=data[i]))
+
+            scipy.sparse.dia_matrix.__init__(self,(rdata,self.offsets),(nwave,nwave))
+
+        else:
+            raise ValueError('Cannot initialize Resolution from %r' % data)
+
+    def to_fits_array(self):
+        """Convert to an array of sparse diagonal values.
+        This is the format used to store resolution matrices in FITS files.
+        Note that some values in the returned rectangular array do not
+        correspond to actual matrix elements since the diagonals get smaller
+        as you move away from the central diagonal. As long as you treat this
+        array as an opaque representation for FITS I/O, you don't care about
+        this. To actually use the matrix, create a Resolution object from the
+        fits array first.
+        Returns:
+            numpy.ndarray: An array of (num_diagonals,nbins) sparse matrix
+                element values close to the diagonal.
+        """
+        return self.data
+
+
 def centers2edges(centers):
     """Convert bin centers to bin edges, guessing at what you probably meant
     Args:

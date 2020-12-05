@@ -385,8 +385,11 @@ class DESIspeculator(Model):
 
                 if resolution is not None: 
                     # apply resolution matrix 
-                    res = UT.desi_Resolution(resolution) 
-                    resampflux = res.dot(resampflux) 
+                    _i = 0 
+                    for res in np.atleast_1d(resolution):
+                        _res = UT.Resolution(res) 
+                        resampflux[_i:_i+res.shape[-1]] = _res.dot(resampflux[_i:_i+res.shape[-1]]) 
+                        _i += res.shape[-1]
                 outspec.append(resampflux) 
 
             if filters is not None: 

@@ -454,9 +454,10 @@ class desiMCMC(MCMC):
         self.prior = prior 
     
     def run(self, wave_obs=None, flux_obs=None, flux_ivar_obs=None,
-            photo_obs=None, photo_ivar_obs=None, zred=None, prior=None,
-            mask=None, bands=None, sampler='emcee', nwalkers=100, niter=1000,
-            burnin=100, maxiter=200000, opt_maxiter=100, writeout=None,
+            resolution=None, photo_obs=None, photo_ivar_obs=None, zred=None,
+            vdisp=150., prior=None, mask=None, bands=None, sampler='emcee',
+            nwalkers=100, niter=1000, burnin=100, maxiter=200000,
+            opt_maxiter=100, writeout=None,
             overwrite=False, debug=False, **kwargs): 
         ''' run MCMC using `emcee` to infer the posterior distribution of the
         model parameters given spectroscopy and/or photometry. The function 
@@ -473,6 +474,9 @@ class desiMCMC(MCMC):
 
         flux_ivar_obs : array_like[Nwave,] or [Narm, Nwave] 
             observed flux **inverse variance**. Not uncertainty!
+
+        resolution : array_like
+            resolution matrix in sparse matrix from. 
         
         photo_obs : array_like[Nband,]
              observed photometric flux __in units of nanomaggies__
@@ -482,6 +486,10 @@ class desiMCMC(MCMC):
 
         zred : float 
             redshift of the observations  
+
+        vdisp : float
+            velocity disperion in km/s. 
+            (Default: 150.) 
     
         prior : PriorSeq object
             A `infer.PriorSeq` object
@@ -548,9 +556,10 @@ class desiMCMC(MCMC):
             - output['flux_photo_viar_data'] :  inverse variance of observed photometry 
         '''
         lnpost_args, lnpost_kwargs = self._lnPost_args_kwargs(
-                wave_obs=wave_obs, flux_obs=flux_obs, flux_ivar_obs=flux_ivar_obs,
+                wave_obs=wave_obs, flux_obs=flux_obs,
+                flux_ivar_obs=flux_ivar_obs, resolution=resolution, 
                 photo_obs=photo_obs, photo_ivar_obs=photo_ivar_obs, zred=zred,
-                prior=prior, mask=mask, bands=bands)
+                vdisp=vdisp, prior=prior, mask=mask, bands=bands)
         
         # run MCMC 
         if sampler == 'emcee': 
@@ -578,8 +587,8 @@ class desiMCMC(MCMC):
         return None 
 
     def lnLike(self, tt, wave_obs, flux_obs, flux_ivar_obs, photo_obs,
-            photo_ivar_obs, zred, mask=None, filters=None, obs_data_type=None,
-            debug=False):
+            photo_ivar_obs, zred, vdisp, resolution=None, mask=None,
+            filters=None, obs_data_type=None, debug=False):
         ''' calculated the log likelihood. 
         '''
         # separate SED parameters from Flux Calibration parameters
@@ -587,8 +596,9 @@ class desiMCMC(MCMC):
                 labels=['sed', 'flux_calib'])
         
         # calculate SED model(theta) 
-        _sed = self.model.sed(tt_sed, zred,
-                wavelength=wave_obs, filters=filters, debug=debug)
+        _sed = self.model.sed(tt_sed, zred, vdisp=vdisp, 
+                wavelength=wave_obs, resolution=resolution, filters=filters,
+                debug=debug)
         if 'photo' in obs_data_type: _, _flux, photo = _sed
         else: _, _flux = _sed
 
@@ -620,8 +630,9 @@ class desiMCMC(MCMC):
         chi2 = _chi2_spec + _chi2_photo
         return -0.5 * chi2
 
-    def _lnPost_args_kwargs(self, wave_obs=None, flux_obs=None, flux_ivar_obs=None,
-            photo_obs=None, photo_ivar_obs=None, zred=None, prior=None,
+    def _lnPost_args_kwargs(self, wave_obs=None, flux_obs=None,
+            flux_ivar_obs=None, resolution=None, photo_obs=None,
+            photo_ivar_obs=None, zred=None, vdisp=None, prior=None,
             mask=None, bands=None):
         ''' preprocess all the inputs and get arg and kwargs for lnPost method 
         '''
@@ -663,8 +674,10 @@ class desiMCMC(MCMC):
                 flux_ivar_obs,          # 1/(10^-17 ergs/s/cm^2/Ang)^2
                 photo_obs,              # nanomaggies
                 photo_ivar_obs,         # 1/nanomaggies^2
-                zred) 
+                zred,
+                vdisp) 
         lnpost_kwargs = {
+                'resolution': resolution, # resolution data 
                 'mask': _mask,          # emission line mask 
                 'filters': filters,
                 'obs_data_type': obs_data_type
@@ -754,7 +767,7 @@ class desiMCMC(MCMC):
 
         obs_data_type = lnpost_kwargs['obs_data_type']
         
-        wave_obs, flux_obs, flux_ivar_obs, photo_obs, photo_ivar_obs, zred = lnpost_args
+        wave_obs, flux_obs, flux_ivar_obs, photo_obs, photo_ivar_obs, zred, vdisp = lnpost_args
 
         output['redshift']              = zred
         output['wavelength_obs']        = wave_obs
@@ -767,7 +780,8 @@ class desiMCMC(MCMC):
         tt_sed, tt_fcalib = self.prior.separate_theta(output['theta_med'],
                 labels=['sed', 'flux_calib'])
         
-        _sed = self.model.sed(tt_sed, zred, wavelength=wave_obs,
+        _sed = self.model.sed(tt_sed, zred, vdisp=vdisp, wavelength=wave_obs,
+                resolution=lnpost_kwargs['resolution'],
                 filters=lnpost_kwargs['filters'], debug=debug)
         if 'photo' in obs_data_type: 
             _, _flux, photo = _sed
