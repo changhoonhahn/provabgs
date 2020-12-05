@@ -376,6 +376,7 @@ class MCMC(object):
             for k in output.keys(): 
                 mcmc.create_dataset(k, data=output[k]) 
         mcmc.close() 
+        output['mcmc_chain'] = t_chain 
         return output  
 
     def read_chain(self, fchain, flat=False, debug=False): 
