@@ -403,7 +403,11 @@ class MCMC(object):
         i_chains = []
         for k in chains.keys(): 
             if 'mcmc_chain' in k: 
-                i_chains.append(int(k.replace('mcmc_chain', '')))
+                try: 
+                    ichain = int(k.replace('mcmc_chain', ''))
+                    i_chains.append(ichain)
+                except ValueError: 
+                    pass 
             else: 
                 mcmc[k] = chains[k][...]
         mcmc['redshift'] = float(mcmc['redshift']) 
@@ -803,6 +807,7 @@ class desiMCMC(MCMC):
 
             for k in output.keys(): 
                 if k not in mcmc.keys() and output[k] is not None: 
+                    if k == 'mcmc_chain': pass 
                     mcmc.create_dataset(k, data=output[k]) 
             mcmc.close() 
         return output 
