@@ -273,10 +273,16 @@ class MCMC(object):
                 args=lnpost_args, 
                 kwargs=lnpost_kwargs)
         zeus_sampler.run_mcmc(burnin[-1], niter)
+
         _chain = zeus_sampler.get_chain()
+        # apply prior transform (e.g. this would transform SFH bases into
+        # Dirichlet priors) 
+        chain = self.prior.transform(_chain)
+        lnpost = zeus_sampler.get_log_prob() 
                     
         output = self._save_chains(
-                _chain, 
+                chain, 
+                lnpost, 
                 lnpost_args, 
                 lnpost_kwargs, 
                 writeout=writeout,
@@ -305,7 +311,9 @@ class MCMC(object):
                 method='Nelder-Mead', 
                 options={'maxiter': opt_maxiter}) 
         tt0 = min_result['x'] 
-        if debug: print('initial theta = [%s]' % ', '.join([str(_t) for _t in tt0])) 
+        if debug:
+            print('initial theta = [%s]' % ', '.join([str(_t) for _t in tt0])) 
+            print('log Posterior(theta0) = %f' % (-0.5*min_result['fun']))
         # initial walker positions 
         p0 = [tt0 + 0.1 * std0 * np.random.randn(ndim) for i in range(nwalkers)]
         # chekc that they're within the prior
@@ -314,15 +322,11 @@ class MCMC(object):
                 p0[i] = tt0 + 1e-3 * std0 * np.random.randn(ndim)
         return p0
 
-    def _save_chains(self, chain, lnpost_args, lnpost_kwargs, writeout=None,
+    def _save_chains(self, chain, lnpost, lnpost_args, lnpost_kwargs, writeout=None,
             overwrite=False, debug=False, **kwargs):
         ''' save MC chains to file along with other details. If file exists, it
         will append it to the hdf5 file unless `overwrite=True`. 
         '''
-        # apply prior transform (e.g. this would transform SFH bases into
-        # Dirichlet priors) 
-        t_chain = self.prior.transform(chain)
-
         if writeout is None: 
             pass
         elif not overwrite and os.path.isfile(writeout): 
@@ -347,24 +351,28 @@ class MCMC(object):
         else:   
             if debug: print('  writing to ... %s' % writeout)
             mcmc = h5py.File(writeout, 'w')  # write 
-            mcmc.create_dataset('mcmc_chain0', data=t_chain) # first chain 
+            mcmc.create_dataset('mcmc_chain0', data=chain) # first chain 
+            mcmc.create_dataset('log_prob0', data=lnpost) 
             newfile = True
     
         # get summary of the posterior from *all* of the chains in file 
         flat_chain = self._flatten_chain(chain)
-        lowlow, low, med, high, highhigh = np.percentile(flat_chain, 
-                [2.5, 16, 50, 84, 97.5], axis=0)
+        flat_log_prob = lnpost.reshape((-1,), order='F')
+
+        i_max = flat_log_prob.argmax() 
+        theta_bestfit = flat_chain[i_max,:]
+
+        if debug: 
+            print('bestfit theta = [%s]' % ', '.join([str(_t) for _t in
+                theta_bestfit])) 
+            print('log Posterior = %f' % (flat_log_prob[i_max]))
     
         output = {} 
         output['prior_range'] = self.prior.range 
-        output['theta_med']         = self.prior.transform(med)
-        output['theta_1sig_plus']   = self.prior.transform(high)
-        output['theta_2sig_plus']   = self.prior.transform(highhigh)
-        output['theta_1sig_minus']  = self.prior.transform(low)
-        output['theta_2sig_minus']  = self.prior.transform(lowlow)
+        output['theta_bestfit']     = theta_bestfit
         
         if writeout is None:
-            output['mcmc_chain'] = t_chain 
+            output['mcmc_chain'] = chain 
             return output
 
         if not newfile: 
@@ -376,7 +384,7 @@ class MCMC(object):
             for k in output.keys(): 
                 mcmc.create_dataset(k, data=output[k]) 
         mcmc.close() 
-        output['mcmc_chain'] = t_chain 
+        output['mcmc_chain'] = chain 
         return output  
 
     def read_chain(self, fchain, flat=False, debug=False): 
@@ -545,12 +553,8 @@ class desiMCMC(MCMC):
         -------
         output : dict
             ouptut is structured into a dictionary the includes the following keys: 
-            - output['redshift'] : redshift 
-            - output['theta_med'] : parameter value of the median posterior
-            - output['theta_1sig_plus'] : 1sigma above median 
-            - output['theta_2sig_plus'] : 2sigma above median 
-            - output['theta_1sig_minus'] : 1sigma below median 
-            - output['theta_2sig_minus'] : 2sigma below median 
+            - output['redshift']        : redshift 
+            - output['theta_bestfit']   : parameter value of MCMC sample with highest log probability 
             - output['wavelength_model'] : wavelength of best-fit model 
             - output['flux_spec_model'] : flux of best-fit model spectrum
             - output['flux_photo_model'] : flux of best-fit model photometry 
@@ -765,9 +769,9 @@ class desiMCMC(MCMC):
 
         return specFilter.load_filters(*tuple(bands_list))
    
-    def _save_chains(self, chain, lnpost_args, lnpost_kwargs, writeout=None,
+    def _save_chains(self, chain, lnpost, lnpost_args, lnpost_kwargs, writeout=None,
             overwrite=False, debug=False, **kwargs):
-        output = super()._save_chains(chain, lnpost_args, lnpost_kwargs,
+        output = super()._save_chains(chain, lnpost, lnpost_args, lnpost_kwargs,
                 writeout=writeout, overwrite=overwrite, debug=debug)
 
         obs_data_type = lnpost_kwargs['obs_data_type']
@@ -782,7 +786,7 @@ class desiMCMC(MCMC):
         output['flux_ivar_photo_obs']   = photo_ivar_obs
 
         # add best-fit model to output dictionary
-        tt_sed, tt_fcalib = self.prior.separate_theta(output['theta_med'],
+        tt_sed, tt_fcalib = self.prior.separate_theta(output['theta_bestfit'],
                 labels=['sed', 'flux_calib'])
         
         _sed = self.model.sed(tt_sed, zred, vdisp=vdisp, wavelength=wave_obs,

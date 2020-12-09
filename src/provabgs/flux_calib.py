@@ -12,8 +12,7 @@ def no_flux_factor(tt, flux):
 
     Parameter
     ---------
-    tt : array_like[1,]
-         flux calibration factor 
+    tt : None
 
     flux : array_like[Nwave,]
         SED that flux calibration is being applied to. 
