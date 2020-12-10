@@ -209,7 +209,7 @@ class MCMC(object):
 
     def _zeus(self, lnpost_args, lnpost_kwargs, prior, nwalkers=100, niter=1000,
             burnin=100, opt_maxiter=1000, debug=False,
-            writeout=None, overwrite=False, **kwargs): 
+            writeout=None, overwrite=False, theta_start=None, progress=True, **kwargs): 
         ''' sample posterior distribution using `zeus`
     
         
@@ -253,7 +253,8 @@ class MCMC(object):
         self.ndim = self.prior.ndim
         
         start = self._initialize_walkers(lnpost_args, lnpost_kwargs, 
-                nwalkers=nwalkers, opt_maxiter=opt_maxiter, debug=debug)
+                nwalkers=nwalkers, opt_maxiter=opt_maxiter,
+                theta_start=theta_start, debug=debug)
 
         if debug: print('--- burn-in ---') 
         zeus_sampler = zeus.EnsembleSampler(
@@ -262,7 +263,7 @@ class MCMC(object):
                 self.lnPost, 
                 args=lnpost_args, 
                 kwargs=lnpost_kwargs)
-        zeus_sampler.run_mcmc(start, burnin)
+        zeus_sampler.run_mcmc(start, burnin, progress=progress)
         burnin = zeus_sampler.get_chain()
 
         if debug: print('--- running main MCMC ---') 
@@ -272,7 +273,7 @@ class MCMC(object):
                 self.lnPost, 
                 args=lnpost_args, 
                 kwargs=lnpost_kwargs)
-        zeus_sampler.run_mcmc(burnin[-1], niter)
+        zeus_sampler.run_mcmc(burnin[-1], niter, progress=progress)
 
         _chain = zeus_sampler.get_chain()
         # apply prior transform (e.g. this would transform SFH bases into
@@ -292,25 +293,28 @@ class MCMC(object):
         return output 
 
     def _initialize_walkers(self, lnpost_args, lnpost_kwargs, 
-            nwalkers=100, opt_maxiter=1000, debug=False):
+            nwalkers=100, opt_maxiter=1000, theta_start=None, debug=False):
         ''' initalize the walkers by minimizing the -2 * lnPost
         '''
         # initialize the walkers 
         if debug: print('--- initializing the walkers ---') 
         ndim = self.prior.ndim 
-
-        # initialize optimiser 
-        x0 = np.mean([self.prior.sample() for i in range(10)], axis=0)
-        std0 = np.std([self.prior.sample() for i in range(10)], axis=0)
     
-        _lnpost = lambda *args: -2. * self.lnPost(*args, **lnpost_kwargs) 
-        min_result = op.minimize(
-                _lnpost, 
-                x0, 
-                args=lnpost_args, 
-                method='Nelder-Mead', 
-                options={'maxiter': opt_maxiter}) 
-        tt0 = min_result['x'] 
+        if theta_start is None: 
+            # initialize optimiser 
+            x0 = np.mean([self.prior.sample() for i in range(10)], axis=0)
+            std0 = np.std([self.prior.sample() for i in range(10)], axis=0)
+        
+            _lnpost = lambda *args: -2. * self.lnPost(*args, **lnpost_kwargs) 
+            min_result = op.minimize(
+                    _lnpost, 
+                    x0, 
+                    args=lnpost_args, 
+                    method='Nelder-Mead', 
+                    options={'maxiter': opt_maxiter}) 
+            tt0 = min_result['x'] 
+        else: 
+            tt0 = theta_start 
         if debug:
             print('initial theta = [%s]' % ', '.join([str(_t) for _t in tt0])) 
             print('log Posterior(theta0) = %f' % (-0.5*min_result['fun']))
@@ -385,6 +389,7 @@ class MCMC(object):
                 mcmc.create_dataset(k, data=output[k]) 
         mcmc.close() 
         output['mcmc_chain'] = chain 
+        output['log_prob'] = lnpost 
         return output  
 
     def read_chain(self, fchain, flat=False, debug=False): 
@@ -470,8 +475,8 @@ class desiMCMC(MCMC):
             resolution=None, photo_obs=None, photo_ivar_obs=None, zred=None,
             vdisp=150., prior=None, mask=None, bands=None, sampler='emcee',
             nwalkers=100, niter=1000, burnin=100, maxiter=200000,
-            opt_maxiter=100, writeout=None,
-            overwrite=False, debug=False, **kwargs): 
+            opt_maxiter=100, writeout=None, overwrite=False, debug=False,
+            progress=True, **kwargs): 
         ''' run MCMC using `emcee` to infer the posterior distribution of the
         model parameters given spectroscopy and/or photometry. The function 
         outputs a dictionary with the median theta of the posterior as well as 
@@ -587,6 +592,7 @@ class desiMCMC(MCMC):
                 opt_maxiter=opt_maxiter, 
                 writeout=writeout, 
                 overwrite=overwrite, 
+                progress=progress, 
                 debug=debug) 
         return output  
 
