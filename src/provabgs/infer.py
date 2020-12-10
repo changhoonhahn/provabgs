@@ -25,7 +25,7 @@ class MCMC(object):
     def __init__(self): 
         pass
 
-    def lnPost(self, theta, *args, transform=True, debug=False, **kwargs):
+    def lnPost(self, theta, *args, debug=False, **kwargs):
         ''' log Posterior of parameters `theta` 
 
 
@@ -38,14 +38,11 @@ class MCMC(object):
         if debug: print('  log Prior = %f' % lp) 
         if not np.isfinite(lp): 
             return -np.inf
-    
-        if transform: 
-            # transformed theta. Some priors require transforming the parameter
-            # space for sampling (e.g. Dirichlet). For most priors, this
-            # transformation will return the same value  
-            ttheta = self.prior.transform(theta) 
-        else: 
-            ttheta = theta
+
+        # transformed theta. Some priors require transforming the parameter
+        # space for sampling (e.g. Dirichlet). For most priors, this
+        # transformation will return the same value  
+        ttheta = self.prior.transform(theta) 
     
         # calculate likelihood 
         lnlike = self.lnLike(ttheta, *args, debug=debug, **kwargs)
@@ -633,6 +630,7 @@ class desiMCMC(MCMC):
 
             # data - model(theta) with masking 
             dflux = (flux[~mask] - flux_obs[~mask]) 
+            if debug: print(dflux)
 
             # calculate chi-squared for spectra
             _chi2_spec = np.sum(dflux**2 * flux_ivar_obs[~mask]) 
