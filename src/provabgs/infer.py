@@ -25,7 +25,7 @@ class MCMC(object):
     def __init__(self): 
         pass
 
-    def lnPost(self, theta, *args, debug=False, **kwargs):
+    def lnPost(self, theta, *args, transform=True, debug=False, **kwargs):
         ''' log Posterior of parameters `theta` 
 
 
@@ -38,11 +38,14 @@ class MCMC(object):
         if debug: print('  log Prior = %f' % lp) 
         if not np.isfinite(lp): 
             return -np.inf
-
-        # transformed theta. Some priors require transforming the parameter
-        # space for sampling (e.g. Dirichlet). For most priors, this
-        # transformation will return the same value  
-        ttheta = self.prior.transform(theta) 
+    
+        if transform: 
+            # transformed theta. Some priors require transforming the parameter
+            # space for sampling (e.g. Dirichlet). For most priors, this
+            # transformation will return the same value  
+            ttheta = self.prior.transform(theta) 
+        else: 
+            ttheta = theta
     
         # calculate likelihood 
         lnlike = self.lnLike(ttheta, *args, debug=debug, **kwargs)
@@ -250,7 +253,7 @@ class MCMC(object):
 
         if prior is not None: 
             self.prior = prior
-        self.ndim = self.prior.ndim
+        self.ndim_sampling = self.prior.ndim_sampling
         
         start = self._initialize_walkers(lnpost_args, lnpost_kwargs, 
                 nwalkers=nwalkers, opt_maxiter=opt_maxiter,
@@ -259,7 +262,7 @@ class MCMC(object):
         if debug: print('--- burn-in ---') 
         zeus_sampler = zeus.EnsembleSampler(
                 self.nwalkers,
-                self.ndim, 
+                self.ndim_sampling, 
                 self.lnPost, 
                 args=lnpost_args, 
                 kwargs=lnpost_kwargs)
@@ -269,7 +272,7 @@ class MCMC(object):
         if debug: print('--- running main MCMC ---') 
         zeus_sampler = zeus.EnsembleSampler(
                 self.nwalkers,
-                self.ndim, 
+                self.ndim_sampling, 
                 self.lnPost, 
                 args=lnpost_args, 
                 kwargs=lnpost_kwargs)
@@ -298,13 +301,13 @@ class MCMC(object):
         '''
         # initialize the walkers 
         if debug: print('--- initializing the walkers ---') 
-        ndim = self.prior.ndim 
-    
+        ndim = self.prior.ndim_sampling
+
+        x0 = np.mean([self.prior.sample() for i in range(10)], axis=0)
+        std0 = np.std([self.prior.sample() for i in range(10)], axis=0)
+        
         if theta_start is None: 
             # initialize optimiser 
-            x0 = np.mean([self.prior.sample() for i in range(10)], axis=0)
-            std0 = np.std([self.prior.sample() for i in range(10)], axis=0)
-        
             _lnpost = lambda *args: -2. * self.lnPost(*args, **lnpost_kwargs) 
             min_result = op.minimize(
                     _lnpost, 
@@ -313,11 +316,13 @@ class MCMC(object):
                     method='Nelder-Mead', 
                     options={'maxiter': opt_maxiter}) 
             tt0 = min_result['x'] 
+            logp0 = -0.5*min_result['fun']
         else: 
             tt0 = theta_start 
+            logp0 = self.lnPost(tt0, *lnpost_args, **lnpost_kwargs) 
         if debug:
             print('initial theta = [%s]' % ', '.join([str(_t) for _t in tt0])) 
-            print('log Posterior(theta0) = %f' % (-0.5*min_result['fun']))
+            print('log Posterior(theta0) = %f' % logp0)
         # initial walker positions 
         p0 = [tt0 + 0.1 * std0 * np.random.randn(ndim) for i in range(nwalkers)]
         # chekc that they're within the prior
@@ -361,7 +366,7 @@ class MCMC(object):
     
         # get summary of the posterior from *all* of the chains in file 
         flat_chain = self._flatten_chain(chain)
-        flat_log_prob = lnpost.reshape((-1,), order='F')
+        flat_log_prob = lnpost.reshape(np.prod(lnpost.shape))
 
         i_max = flat_log_prob.argmax() 
         theta_bestfit = flat_chain[i_max,:]
@@ -475,7 +480,7 @@ class desiMCMC(MCMC):
             resolution=None, photo_obs=None, photo_ivar_obs=None, zred=None,
             vdisp=150., prior=None, mask=None, bands=None, sampler='emcee',
             nwalkers=100, niter=1000, burnin=100, maxiter=200000,
-            opt_maxiter=100, writeout=None, overwrite=False, debug=False,
+            opt_maxiter=100, theta_start=None, writeout=None, overwrite=False, debug=False,
             progress=True, **kwargs): 
         ''' run MCMC using `emcee` to infer the posterior distribution of the
         model parameters given spectroscopy and/or photometry. The function 
@@ -590,6 +595,7 @@ class desiMCMC(MCMC):
                 niter=niter, 
                 maxiter=maxiter,
                 opt_maxiter=opt_maxiter, 
+                theta_start=theta_start, 
                 writeout=writeout, 
                 overwrite=overwrite, 
                 progress=progress, 
@@ -854,11 +860,11 @@ class PriorSeq(object):
         i = 0 
         lnp_theta = 0. 
         for prior in self.list_of_priors: 
-            _lnp_theta = prior.lnPrior(theta[:,i:i+prior.ndim]) 
+            _lnp_theta = prior.lnPrior(theta[:,i:i+prior.ndim_sampling]) 
             if not np.isfinite(_lnp_theta): return -np.inf
             
             lnp_theta += _lnp_theta 
-            i += prior.ndim
+            i += prior.ndim_sampling
 
         return lnp_theta 
 
@@ -873,13 +879,27 @@ class PriorSeq(object):
     def transform(self, tt): 
         ''' transform theta 
         '''
-        tt_p = np.empty(tt.shape) 
+        tt_p = np.empty(tt.shape[:-1]+(self.ndim,)) 
 
-        i = 0 
+        i, _i = 0, 0 
         for prior in self.list_of_priors: 
-            tt_p[...,i:i+prior.ndim] = prior.transform(tt[...,i:i+prior.ndim])
+            tt_p[...,i:i+prior.ndim] = prior.transform(tt[...,_i:_i+prior.ndim_sampling])
             i += prior.ndim
+            _i += prior.ndim_sampling
         return tt_p 
+
+    def untransform(self, tt): 
+        ''' transform theta 
+        '''
+        tt_p = np.empty(tt.shape[:-1]+(self.ndim_sampling,)) 
+
+        i, _i = 0, 0 
+        for prior in self.list_of_priors: 
+            tt_p[...,i:i+prior.ndim_sampling] = prior.untransform(tt[...,_i:_i+prior.ndim])
+            i += prior.ndim_sampling
+            _i += prior.ndim
+        return tt_p 
+
 
     def separate_theta(self, theta, labels=None): 
         ''' separate theta based on label
@@ -905,6 +925,11 @@ class PriorSeq(object):
         # update ndim  
         return np.sum([prior.ndim for prior in self.list_of_priors]) 
     
+    @property
+    def ndim_sampling(self): 
+        # update ndim  
+        return np.sum([prior.ndim_sampling for prior in self.list_of_priors]) 
+
     @property
     def labels(self): 
         return np.array([prior.label for prior in self.list_of_priors]) 
@@ -938,10 +963,18 @@ class Prior(object):
     '''
     def __init__(self, label=None):
         self.ndim = None 
+        self.ndim_sampling = None 
         self.label = label 
         self._random = np.random.mtrand.RandomState()
 
     def transform(self, tt): 
+        ''' Some priors require transforming the parameter space for sampling
+        (e.g. Dirichlet priors). For most priors, this transformation will return 
+        the same value  
+        '''
+        return tt 
+    
+    def untransform(self, tt): 
         ''' Some priors require transforming the parameter space for sampling
         (e.g. Dirichlet priors). For most priors, this transformation will return 
         the same value  
@@ -960,6 +993,7 @@ class FlatDirichletPrior(Prior):
     def __init__(self, ndim, label=None):
         super().__init__(label=label)
         self.ndim = ndim 
+        self.ndim_sampling = ndim - 1
 
     def transform(self, tt): 
         ''' warped manifold transformation as specified in Betancourt (2013).
@@ -973,8 +1007,8 @@ class FlatDirichletPrior(Prior):
     
         Parameters
         ----------
-        tt : array_like[N,m]
-            N samples drawn from a m-dimensional uniform distribution 
+        tt : array_like[N,m-1]
+            N samples drawn from a (m-1)-dimensional uniform distribution 
 
         Returns
         -------
@@ -986,14 +1020,25 @@ class FlatDirichletPrior(Prior):
         ---------
         * Betancourt(2013) - https://arxiv.org/pdf/1010.3436.pdf
         '''
-        assert self.ndim == tt.shape[-1]
-        tt_d    = np.empty(tt.shape) 
+        assert tt.shape[-1] == self.ndim_sampling
+        tt_d = np.empty(tt.shape[:-1]+(self.ndim,)) 
     
         tt_d[...,0] = 1. - tt[...,0]
-        for i in range(1,self.ndim-1): 
+        for i in range(1,self.ndim_sampling): 
             tt_d[...,i] = np.prod(tt[...,:i], axis=-1) * (1. - tt[...,i]) 
-        tt_d[...,-1] = np.prod(tt[...,:-1], axis=-1) 
+        tt_d[...,-1] = np.prod(tt, axis=-1) 
         return tt_d 
+
+    def untransform(self, tt_d): 
+        ''' reverse the warped manifold transformation 
+        '''
+        assert tt_d.shape[-1] == self.ndim 
+        tt = np.empty(tt_d.shape[:-1]+(self.ndim_sampling,)) 
+
+        tt[...,0] = 1. - tt_d[...,0]
+        for i in range(1,self.ndim_sampling): 
+            tt[...,i] = 1. - (tt_d[...,i]/np.prod(tt[...,:i], axis=-1))
+        return tt
 
     def lnPrior(self, theta):
         ''' evaluate the prior at theta. We assume theta here is
@@ -1009,7 +1054,7 @@ class FlatDirichletPrior(Prior):
         prior : float
             prior evaluated at theta
         '''
-        if np.all(theta <= np.ones(self.ndim)) and np.all(theta >= np.zeros(self.ndim)): 
+        if np.all(theta <= np.ones(self.ndim_sampling)) and np.all(theta >= np.zeros(self.ndim_sampling)): 
             return 0.
         else: 
             return -np.inf
@@ -1018,7 +1063,7 @@ class FlatDirichletPrior(Prior):
         raise ValueError("appending not supproted") 
 
     def sample(self): 
-        return np.array([self._random.uniform(0., 1.) for i in range(self.ndim)])
+        return np.array([self._random.uniform(0., 1.) for i in range(self.ndim_sampling)])
 
 
 class UniformPrior(Prior): 
@@ -1031,6 +1076,7 @@ class UniformPrior(Prior):
         self.min = np.atleast_1d(_min)
         self.max = np.atleast_1d(_max)
         self.ndim = self.min.shape[0]
+        self.ndim_sampling = self.ndim
         assert self.min.shape[0] == self.max.shape[0]
         assert np.all(self.min < self.max)
         
@@ -1053,6 +1099,7 @@ class GaussianPrior(Prior):
         self.mean = np.atleast_1d(mean)
         self.covariance = np.atleast_1d(covariance)
         self.ndim = self.mean.shape[0]
+        self.ndim_sampling = self.ndim
         assert self.mean.shape[0] == self.covariance.shape[0]
         self.multinorm = stat.multivariate_normal(self.mean, self.covariance)
     
