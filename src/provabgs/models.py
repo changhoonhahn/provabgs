@@ -490,7 +490,7 @@ class DESIspeculator(Model):
         sfh = np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] for i in range(4)]), axis=0)
 
         # multiply by stellar mass 
-        sfh*= 10**tt[:,0][:,None]
+        sfh *= 10**tt[:,0][:,None]
 
         if tt.shape[0] == 1: 
             return t, sfh[0]
@@ -566,13 +566,14 @@ class DESIspeculator(Model):
 
         # add up the stellar mass formed during the dt time period 
         if method == 'trapz': 
+            #avsfr = np.trapz(_sfh[::-1], _t[::-1]) / dt
             avsfr = np.trapz(_sfh[::-1], _t[::-1]) / dt
         elif method == 'simps': 
             from scipy.intergrate import simps
             avsfr = simps(_sfh[::-1], _t[::-1]) / dt
         else: 
             raise NotImplementedError
-        return np.clip(avsfr, 0., None)
+        return np.clip(avsfr[::-1], 0., None)
     
     def Z_MW(self, tt, zred):
         ''' given theta calculate mass weighted metallicity using the ZH NMF
