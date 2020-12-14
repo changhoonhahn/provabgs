@@ -1076,7 +1076,7 @@ class UniformPrior(Prior):
         self.ndim = self.min.shape[0]
         self.ndim_sampling = self.ndim
         assert self.min.shape[0] == self.max.shape[0]
-        assert np.all(self.min < self.max)
+        assert np.all(self.min <= self.max)
         
     def lnPrior(self, theta):
         if np.all(theta < self.max) and np.all(theta >= self.min): 
