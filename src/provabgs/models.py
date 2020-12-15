@@ -175,7 +175,8 @@ class Model(object):
 
 
 class FSPS(Model): 
-    '''
+    ''' Model class object with FSPS models with different SFH
+    parameterizations. 
     '''
     def __init__(self, name='nmf_bases', cosmo=None): 
         self.name = name 
@@ -398,10 +399,11 @@ class FSPS(Model):
         return self._ssp.get_spectrum(tage=tt[7], peraa=True) 
 
     def SFH(self, tt, zred): 
-        '''
+        ''' star formation history given parameters and redshift 
         '''
         tt = np.atleast_2d(tt)
         if self.name == 'nmf_bases': return self._SFH_nmf(tt, zred)
+        elif self.name == 'nmf_comp': return self._SFH_nmf_compressed(tt, zred)
         elif self.name in ['tau', 'delayed_tau']: return self._SFH_tau(tt, zred)
 
     def _SFH_nmf(self, tt, zred): 
@@ -415,6 +417,34 @@ class FSPS(Model):
         
         # normalized basis out to t 
         _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
+            for i in range(4)])
+
+        # caluclate normalized SFH
+        sfh = np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] for i in range(4)]), axis=0)
+
+        # multiply by stellar mass 
+        sfh *= 10**tt[:,0][:,None]
+
+        if tt.shape[0] == 1: 
+            return t, sfh[0]
+        else: 
+            return t, sfh 
+
+    def _SFH_nmf_compressed(self, tt, zred): 
+        ''' SFH based on *compressed* NMF SFH bases. Unlike `self._SFH_nmf`,
+        the bases do not truncate at tage but the entire basis is
+        compressed to fit the range 0-tage.  
+        '''
+        tt_sfh = tt[:,1:5] # sfh basis coefficients 
+        
+        assert isinstance(zred, float)
+        tage = self.cosmo.age(zred).value # age in Gyr
+        t = np.linspace(0, tage, 50)
+        
+        # normalized basis out to t 
+        #_basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
+        #    for i in range(4)])
+        _basis = np.array([self._nmf_sfh_basis[i] / np.trapz(self._nmf_sfh_basis[i], t) 
             for i in range(4)])
 
         # caluclate normalized SFH
@@ -476,9 +506,9 @@ class FSPS(Model):
         '''
         tt = np.atleast_2d(tt)
         if self.name == 'nmf_bases': return self._ZH_nmf(tt, zred, tcosmic=tcosmic)
+        elif self.name == 'nmf_comp': return self._ZH_nmf_compressed(tt, zred, tcosmic=tcosmic)
         elif self.name in ['tau', 'delayed_tau']: 
             return self._ZH_tau(tt, zred, tcosmic=tcosmic)
-
 
     def _ZH_nmf(self, tt, zred, tcosmic=None): 
         ''' metallicity history for a set of parameter values `tt` and redshift `zred`
@@ -523,6 +553,46 @@ class FSPS(Model):
         else: 
             return t, zh 
 
+    def _ZH_nmf_compressed(self, tt, zred, tcosmic=None): 
+        ''' metallicity history for a set of parameter values `tt` and redshift `zred`
+
+        parameters
+        ----------
+        tt : array_like[N,Nparam]
+           Parameter values of [log M*, b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH,
+           'dust1', 'dust2', 'dust_index']. 
+
+        zred : float
+            redshift
+
+        tcosmic : array_like
+            cosmic time
+
+        Returns 
+        -------
+        t : array_like[50,]
+            cosmic time linearly spaced from 0 to the age of the galaxy
+
+        zh : array_like[N,50]
+            metallicity at cosmic time t --- ZH(t) 
+        '''
+        tt_zh = tt[:,5:7] # zh bases 
+        
+        assert isinstance(zred, float)
+        tage = self.cosmo.age(zred).value # age in Gyr
+        if tcosmic is not None: 
+            assert tage >= np.max(tcosmic) 
+            t = tcosmic.copy() 
+        else: 
+            t = np.linspace(0, tage, 50)
+
+        # get metallicity history
+        zh = np.sum(np.array([tt_zh[:,i][:,None] * self._nmf_zh_basis[i][None,:] for i in range(2)]), axis=0) 
+        if tt.shape[0] == 1: 
+            return t, zh[0]
+        else: 
+            return t, zh 
+    
     def _ZH_tau(self, tt, zred, tcosmic=None): 
         ''' constant metallicity 
         '''
@@ -541,7 +611,7 @@ class FSPS(Model):
     def _init_model(self, **kwargs): 
         ''' initialize theta values 
         '''
-        if self.name == 'nmf_bases': 
+        if self.name in ['nmf_bases', 'nmf_comp']: 
             self._sps_parameters = [
                     'logmstar', 
                     'beta1_sfh', 
