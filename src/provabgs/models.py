@@ -71,7 +71,7 @@ class Model(object):
         smoothflux = gaussian_filter1d(flux_wlog, sigma=sigma, axis=0)
         return wlog, smoothflux
     
-    def avgSFR(self, tt, zred, dt=1., method='trapz'):
+    def avgSFR(self, tt, zred, dt=1., t0=None, method='trapz'):
         ''' given a set of parameter values `tt` and redshift `zred`, calculate
         SFR averaged over `dt` Gyr. 
 
@@ -86,6 +86,11 @@ class Model(object):
 
         dt : float
             Gyrs to average the SFHs 
+
+        t0 : None or float 
+            Cosmic time where you want to evaluate the average SFR. If
+            specified, the function returns the average SFR over the range [t0,
+            t0-dt]. If None, [tage, tage-dt]
         '''
         _t, _sfh = self.SFH(tt, zred) # get SFH 
         if np.atleast_2d(_t).shape[0] > 1: 
@@ -93,25 +98,48 @@ class Model(object):
         else: 
             ts = [_t]
             sfhs = [_sfh] 
-    
+
         avsfrs = [] 
-        for t, sfh in zip(ts, sfhs): 
+        for tcosmic, sfh in zip(ts, sfhs): 
+
             sfh = np.atleast_2d(sfh) / 1e9 # in units of 10^9 Msun 
-            assert t[-1] > dt # check that the age of the galaxy is longer than the timescale 
 
-            # linearly interpolate SFH at tage - dt  
-            tlookback = t[-1] - t # look back time 
-            i0 = np.where(tlookback < dt)[0][0]  
-            i1 = np.where(tlookback > dt)[0][-1]
+            tage = tcosmic[-1] 
+            assert tage > dt # check that the age of the galaxy is longer than the timescale 
+            tlookback = tage - tcosmic # look back time 
 
-            sfh_t_dt = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (dt - tlookback[i0]) + sfh[:,i0]
-        
-            _t = np.concatenate([[dt], tlookback[i0:]]) 
-            _sfh = np.concatenate([sfh_t_dt[:,None], sfh[:,i0:]], axis=1)
+            if t0 is None: 
+                # calculate average SFR over the range tcomic [tage, tage - dt]
+                # linearly interpolate SFH at tage - dt  
+                i0 = np.where(tlookback < dt)[0][0]  
+                i1 = np.where(tlookback > dt)[0][-1]
+
+                sfh_t_dt = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (dt - tlookback[i0]) + sfh[:,i0]
+            
+                _t = np.concatenate([[dt], tlookback[i0:]]) 
+                _sfh = np.concatenate([sfh_t_dt[:,None], sfh[:,i0:]], axis=1)
+            else: 
+                # calculate average SFR over the range tcomic \in [t0, t0-dt]
+                assert tage > t0 
+                # linearly interpolate SFH to t0   
+                i0 = np.where(tlookback < tage - t0)[0][0]  
+                i1 = np.where(tlookback > tage - t0)[0][-1]
+
+                sfh_t_t0 = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (tage - t0 - tlookback[i0]) + sfh[:,i0]
+                
+                # linearly interpolate SFH to t0 - dt  
+                i0 = np.where(tlookback < tage - t0 + dt)[0][0]  
+                i1 = np.where(tlookback > tage - t0 + dt)[0][-1]
+
+                sfh_t_t0_dt = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (tage - t0 + dt - tlookback[i0]) + sfh[:,i0]
+
+                i_in = (tlookback < tage - t0 + dt) & (tlookback > tage - t0)
+    
+                _t = np.concatenate([[tage - t0 + dt], tlookback[i_in], [tage - t0]]) 
+                _sfh = np.concatenate([sfh_t_t0_dt[:,None], sfh[:,i_in], sfh_t_t0[:,None]], axis=1)
 
             # add up the stellar mass formed during the dt time period 
             if method == 'trapz': 
-                #avsfr = np.trapz(_sfh[::-1], _t[::-1]) / dt
                 avsfr = np.trapz(_sfh[::-1], _t[::-1]) / dt
             elif method == 'simps': 
                 from scipy.intergrate import simps
@@ -181,6 +209,7 @@ class FSPS(Model):
     def __init__(self, name='nmf_bases', cosmo=None): 
         self.name = name 
         super().__init__(cosmo=cosmo)
+        self._ssp = None 
 
     def sed(self, tt, zred, vdisp=0., wavelength=None, resolution=None,
             filters=None, debug=False): 
@@ -223,6 +252,10 @@ class FSPS(Model):
         outspec : [Nsample, Nwave]
             the redshifted SED in units of 1e-17 * erg/s/cm^2/Angstrom.
         '''
+        if self._ssp is None: 
+            # initialize FSPS StellarPopulation object
+            self._ssp_initiate() 
+
         tt      = np.atleast_2d(tt)
         zred    = np.atleast_1d(zred) 
         vdisp   = np.atleast_1d(vdisp) 
@@ -315,6 +348,10 @@ class FSPS(Model):
         lum_ssp : array_like[Nwave] 
             FSPS SSP luminosity in units of Lsun/A
         '''
+        if self._ssp is None: 
+            # initialize FSPS StellarPopulation object
+            self._ssp_initiate() 
+
         tt_sfh      = tt[:4] 
         tt_zh       = tt[4:6]
         tt_dust1    = tt[6]
@@ -384,6 +421,10 @@ class FSPS(Model):
         lum_ssp : array_like[Nwave] 
             FSPS SSP luminosity in units of Lsun/A
         '''
+        if self._ssp is None: 
+            # initialize FSPS StellarPopulation object
+            self._ssp_initiate() 
+
         # sfh parameters
         self._ssp.params['tau']      = tt[0] # e-folding time in Gyr 0.1 < tau < 10^2
         self._ssp.params['const']    = tt[1] # constant component 0 < C < 1 
@@ -643,15 +684,13 @@ class FSPS(Model):
         else: 
             raise NotImplementedError 
         
-        # initialize FSPS StellarPopulation object
-        #self._ssp_initiate() 
         return None 
 
     def _ssp_initiate(self): 
         ''' initialize sps (FSPS StellarPopulaiton object) 
         '''
         import fsps
-        if self.name == 'nmf_bases': 
+        if self.name in ['nmf_bases', 'nmf_comp']: 
             sfh         = 0 
             dust_type   = 4
             imf_type    = 1 # chabrier
@@ -668,9 +707,9 @@ class FSPS(Model):
 
         self._ssp = fsps.StellarPopulation(
                 zcontinuous=1,          # interpolate metallicities
-                sfh=0,                  # sfh type 
-                dust_type=4,            
-                imf_type=1)             # chabrier 
+                sfh=sfh,                  # sfh type 
+                dust_type=dust_type,            
+                imf_type=imf_type)             # chabrier 
         return None  
 
 
