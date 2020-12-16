@@ -412,6 +412,8 @@ class FSPS(Model):
         tt_sfh = tt[:,1:5] # sfh basis coefficients 
         
         assert isinstance(zred, float)
+        assert np.isclose(np.sum(_tt[1:5]), 1.), "SFH basis coefficients should add up to 1, perhaps you forgot to transform the Dirichlet samples"
+
         tage = self.cosmo.age(zred).value # age in Gyr
         t = np.linspace(0, tage, 50)
         
