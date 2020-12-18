@@ -88,7 +88,7 @@ class Model(object):
             Gyrs to average the SFHs 
 
         t0 : None or float 
-            Cosmic time where you want to evaluate the average SFR. If
+            lookback time where you want to evaluate the average SFR. If
             specified, the function returns the average SFR over the range [t0,
             t0-dt]. If None, [tage, tage-dt]
         '''
@@ -100,53 +100,52 @@ class Model(object):
             sfhs = [_sfh] 
 
         avsfrs = [] 
-        for tcosmic, sfh in zip(ts, sfhs): 
+        for tlookback, sfh in zip(ts, sfhs): 
 
             sfh = np.atleast_2d(sfh) / 1e9 # in units of 10^9 Msun 
 
-            tage = tcosmic[-1] 
+            tage = tlookback[-1] 
             assert tage > dt # check that the age of the galaxy is longer than the timescale 
-            tlookback = tage - tcosmic # look back time 
 
             if t0 is None: 
                 # calculate average SFR over the range tcomic [tage, tage - dt]
                 # linearly interpolate SFH at tage - dt  
-                i0 = np.where(tlookback < dt)[0][0]  
-                i1 = np.where(tlookback > dt)[0][-1]
+                i0 = np.where(tlookback < dt)[0][-1]  
+                i1 = np.where(tlookback > dt)[0][0]
 
                 sfh_t_dt = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (dt - tlookback[i0]) + sfh[:,i0]
             
-                _t = np.concatenate([[dt], tlookback[i0:]]) 
-                _sfh = np.concatenate([sfh_t_dt[:,None], sfh[:,i0:]], axis=1)
+                _t = np.concatenate([tlookback[:i0+1], [dt]]) 
+                _sfh = np.concatenate([sfh[:,:i0+1], sfh_t_dt[:,None]], axis=1)
             else: 
                 # calculate average SFR over the range tcomic \in [t0, t0-dt]
                 assert tage > t0 
                 # linearly interpolate SFH to t0   
-                i0 = np.where(tlookback < tage - t0)[0][0]  
-                i1 = np.where(tlookback > tage - t0)[0][-1]
+                i0 = np.where(tlookback < t0)[0][-1]  
+                i1 = np.where(tlookback > t0)[0][0]
 
-                sfh_t_t0 = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (tage - t0 - tlookback[i0]) + sfh[:,i0]
+                sfh_t_t0 = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (t0 - tlookback[i0]) + sfh[:,i0]
                 
                 # linearly interpolate SFH to t0 - dt  
-                i0 = np.where(tlookback < tage - t0 + dt)[0][0]  
-                i1 = np.where(tlookback > tage - t0 + dt)[0][-1]
+                i0 = np.where(tlookback < t0 + dt)[0][-1]  
+                i1 = np.where(tlookback > t0 + dt)[0][0]
 
-                sfh_t_t0_dt = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (tage - t0 + dt - tlookback[i0]) + sfh[:,i0]
+                sfh_t_t0_dt = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (t0 + dt - tlookback[i0]) + sfh[:,i0]
 
-                i_in = (tlookback < tage - t0 + dt) & (tlookback > tage - t0)
+                i_in = (tlookback < t0 + dt) & (tlookback > t0)
     
-                _t = np.concatenate([[tage - t0 + dt], tlookback[i_in], [tage - t0]]) 
-                _sfh = np.concatenate([sfh_t_t0_dt[:,None], sfh[:,i_in], sfh_t_t0[:,None]], axis=1)
+                _t = np.concatenate([[t0], tlookback[i_in], [t0 + dt]]) 
+                _sfh = np.concatenate([sfh_t_t0[:,None], sfh[:,i_in], sfh_t_t0_dt[:,None]], axis=1)
 
             # add up the stellar mass formed during the dt time period 
             if method == 'trapz': 
-                avsfr = np.trapz(_sfh[::-1], _t[::-1]) / dt
+                avsfr = np.trapz(_sfh, _t) / dt
             elif method == 'simps': 
                 from scipy.intergrate import simps
-                avsfr = simps(_sfh[::-1], _t[::-1]) / dt
+                avsfr = simps(_sfh, _t) / dt
             else: 
                 raise NotImplementedError
-            avsfrs.append(np.clip(avsfr[::-1], 0., None))
+            avsfrs.append(np.clip(avsfr, 0., None))
         
         if len(avsfrs) == 1: 
             return avsfrs[0]
@@ -177,27 +176,28 @@ class Model(object):
         ft = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat',
                 'sfh_t_int.txt') 
 
-        nmf_sfh = np.loadtxt(fsfh) 
+        nmf_sfh = np.loadtxt(fsfh) # basis order is jumbled up it should be [2 ,0, 1, 3]
         nmf_zh  = np.loadtxt(fzh) 
         nmf_t   = np.loadtxt(ft) # look back time 
 
-        self._nmf_t_lookback    = nmf_t
+        self._nmf_t_lookback    = nmf_t 
         self._nmf_sfh_basis     = nmf_sfh 
         self._nmf_zh_basis      = nmf_zh
 
         Ncomp_sfh = self._nmf_sfh_basis.shape[0]
         Ncomp_zh = self._nmf_zh_basis.shape[0]
     
+        # SFH bases as a function of lookback time 
         self._sfh_basis = [
                 Interp.InterpolatedUnivariateSpline(
-                    max(self._nmf_t_lookback) - self._nmf_t_lookback, 
-                    self._nmf_sfh_basis[i], k=1) 
+                    self._nmf_t_lookback[::-1], 
+                    self._nmf_sfh_basis[i][::-1], k=1) 
                 for i in range(Ncomp_sfh)
                 ]
         self._zh_basis = [
                 Interp.InterpolatedUnivariateSpline(
-                    max(self._nmf_t_lookback) - self._nmf_t_lookback, 
-                    self._nmf_zh_basis[i], k=1) 
+                    self._nmf_t_lookback[::-1], 
+                    self._nmf_zh_basis[i][::-1], k=1) 
                 for i in range(Ncomp_zh)]
         return None 
 
@@ -456,7 +456,7 @@ class FSPS(Model):
         assert np.isclose(np.sum(_tt[1:5]), 1.), "SFH basis coefficients should add up to 1, perhaps you forgot to transform the Dirichlet samples"
 
         tage = self.cosmo.age(zred).value # age in Gyr
-        t = np.linspace(0, tage, 50)
+        t = np.linspace(0, tage, 50) # look back time 
         
         # normalized basis out to t 
         _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
