@@ -165,40 +165,58 @@ class Model(object):
 
         return np.clip(z_mw, 0, np.inf)
 
-    def _load_NMF_bases(self): 
+    def _load_NMF_bases(self, name='tojeiro.4comp'): 
         ''' read in NMF SFH and ZH bases. These bases are used to reduce the
         dimensionality of the SFH and ZH. 
         '''
-        fsfh = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat',
-                'NMF_2basis_SFH_components_nowgt_lin_Nc4.txt')
-        fzh = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat',
-                'NMF_2basis_Z_components_nowgt_lin_Nc2.txt') 
-        ft = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat',
-                'sfh_t_int.txt') 
+        dir_dat = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat') 
+        if name == 'tojeiro.4comp': 
+            fsfh = os.path.join(dir_dat, 'NMF_2basis_SFH_components_nowgt_lin_Nc4.txt')
+            fzh = os.path.join(dir_dat, 'NMF_2basis_Z_components_nowgt_lin_Nc2.txt') 
+            ft = os.path.join(dir_dat, 'sfh_t_int.txt') 
 
-        nmf_sfh = np.loadtxt(fsfh) # basis order is jumbled up it should be [2 ,0, 1, 3]
-        nmf_zh  = np.loadtxt(fzh) 
-        nmf_t   = np.loadtxt(ft) # look back time 
+            nmf_sfh = np.loadtxt(fsfh) # basis order is jumbled up it should be [2 ,0, 1, 3]
+            nmf_zh  = np.loadtxt(fzh) 
+            nmf_t   = np.loadtxt(ft) # look back time 
 
-        self._nmf_t_lookback    = nmf_t 
-        self._nmf_sfh_basis     = nmf_sfh 
-        self._nmf_zh_basis      = nmf_zh
+            self._nmf_t_lb_sfh      = nmf_t[::-1] 
+            self._nmf_t_lb_zh       = nmf_t[::-1] 
+            self._nmf_sfh_basis     = nmf_sfh[:,::-1]
+            self._nmf_zh_basis      = nmf_zh[:,::-1]
 
-        Ncomp_sfh = self._nmf_sfh_basis.shape[0]
-        Ncomp_zh = self._nmf_zh_basis.shape[0]
-    
+        elif name == 'tng.6comp': 
+            fsfh = os.path.join(dir_dat, 'NMF_basis.sfh.tng6comp.txt') 
+            fzh = os.path.join(dir_dat, 'NMF_2basis_Z_components_nowgt_lin_Nc2.txt') 
+            ftsfh = os.path.join(dir_dat, 't_sfh.tng6comp.txt') 
+            ftzh = os.path.join(dir_dat, 'sfh_t_int.txt') 
+
+            nmf_sfh     = np.loadtxt(fsfh, unpack=True) 
+            nmf_zh      = np.loadtxt(fzh) 
+            nmf_tsfh    = np.loadtxt(ft) # look back time 
+            nmf_tzh     = np.loadtxt(ft) # look back time 
+
+            self._nmf_t_lb_sfh      = nmf_tsfh
+            self._nmf_t_lb_zh       = nmf_tzh[::-1]
+            self._nmf_sfh_basis     = nmf_sfh 
+            self._nmf_zh_basis      = nmf_zh[:,::-1]
+        else:
+            raise NotImplementedError
+
+        self._Ncomp_sfh = self._nmf_sfh_basis.shape[0]
+        self._Ncomp_zh = self._nmf_zh_basis.shape[0]
+        
         # SFH bases as a function of lookback time 
         self._sfh_basis = [
                 Interp.InterpolatedUnivariateSpline(
-                    self._nmf_t_lookback[::-1], 
-                    self._nmf_sfh_basis[i][::-1], k=1) 
-                for i in range(Ncomp_sfh)
+                    self._nmf_t_lb_sfh, 
+                    self._nmf_sfh_basis[i], k=1) 
+                for i in range(self._Ncomp_sfh)
                 ]
         self._zh_basis = [
                 Interp.InterpolatedUnivariateSpline(
-                    self._nmf_t_lookback[::-1], 
-                    self._nmf_zh_basis[i][::-1], k=1) 
-                for i in range(Ncomp_zh)]
+                    self._nmf_t_lb_zh, 
+                    self._nmf_zh_basis[i], k=1) 
+                for i in range(self._Ncomp_zh)]
         return None 
 
 
@@ -351,32 +369,36 @@ class FSPS(Model):
         if self._ssp is None: 
             # initialize FSPS StellarPopulation object
             self._ssp_initiate() 
+    
+        ncomp_sfh = self._Ncomp_sfh
+        ncomp_zh = self._Ncomp_zh
+        tt_sfh          = tt[:ncomp_sfh] 
+        tt_zh           = tt[ncomp_sfh:ncomp_sfh+ncomp_zh]
+        tt_dust1        = tt[ncomp_sfh+ncomp_zh]
+        tt_dust2        = tt[ncomp_sfh+ncomp_zh+1]
+        tt_dust_index   = tt[ncomp_sfh+ncomp_zh+2]
+        tage            = tt[ncomp_sfh+ncomp_zh+3] 
+    
+        tlookback = np.linspace(0, tage, 50) # lookback time edges
+        tages = 0.5 * (tlookback[1:] + tlookback[:-1])
+        dt = np.diff(tlookback)
 
-        tt_sfh      = tt[:4] 
-        tt_zh       = tt[4:6]
-        tt_dust1    = tt[6]
-        tt_dust2    = tt[7]
-        tt_dust_index = tt[8]
-        tage        = tt[9] 
-
-        _t = np.linspace(0, tage, 50)
-        tages   = max(_t) - _t + 1e-8 
-
-        # Compute SFH and ZH
+        # SFH at lookback time  
         sfh = np.sum(np.array([
             tt_sfh[i] *
-            self._sfh_basis[i](_t)/np.trapz(self._sfh_basis[i](_t), _t) 
-            for i in range(4)]), 
+            self._sfh_basis[i](tlookback)/np.trapz(self._sfh_basis[i](tlookback), tlookback) 
+            for i in range(ncomp_sfh)]), 
             axis=0)
+        # ZH at the center of the lookback time bins 
         zh = np.sum(np.array([
-            tt_zh[i] * self._zh_basis[i](_t) 
-            for i in range(2)]), 
+            tt_zh[i] * self._zh_basis[i](tages) for i in range(ncomp_zh)]), 
             axis=0)
-        
-        for i, tage, m, z in zip(range(len(tages)), tages, sfh, zh): 
-            if m <= 0 and i != 0: # no star formation in this bin 
-                continue
-            self._ssp.params['logzsol'] = np.log10(z/0.0190) # log(Z/Zsun)
+    
+        for i, tage in enumerate(tages): 
+            m = dt[i] * 0.5 * (sfh[i] + sfh[i+1]) # mass formed in this bin 
+            if m <= 0 and i != 0: continue 
+
+            self._ssp.params['logzsol'] = np.log10(zh[i]/0.0190) # log(Z/Zsun)
             self._ssp.params['dust1'] = tt_dust1
             self._ssp.params['dust2'] = tt_dust2 
             self._ssp.params['dust_index'] = tt_dust_index
@@ -388,9 +410,6 @@ class FSPS(Model):
             if i == 0: lum_ssp = np.zeros(len(wave_rest))
             lum_ssp += m * lum_i 
 
-        # the following normalization is to deal with the fact that
-        # fsps.get_spectrum is normalized so that formed_mass = 1 Msun
-        lum_ssp /= np.sum(sfh) 
         return wave_rest, lum_ssp
 
     def _fsps_tau(self, tt): 
@@ -443,27 +462,28 @@ class FSPS(Model):
         ''' star formation history given parameters and redshift 
         '''
         tt = np.atleast_2d(tt)
-        if self.name == 'nmf_bases': return self._SFH_nmf(tt, zred)
+        if self.name in ['nmf_bases', 'nmf_tng6']: return self._SFH_nmf(tt, zred)
         elif self.name == 'nmf_comp': return self._SFH_nmf_compressed(tt, zred)
         elif self.name in ['tau', 'delayed_tau']: return self._SFH_tau(tt, zred)
 
     def _SFH_nmf(self, tt, zred): 
         ''' SFH based on NMF SFH bases
         '''
-        tt_sfh = tt[:,1:5] # sfh basis coefficients 
+        ncomp_sfh = self._Ncomp_sfh
+        tt_sfh = tt[:,1:ncomp_sfh+1] # sfh basis coefficients 
         
         assert isinstance(zred, float)
-        assert np.isclose(np.sum(_tt[1:5]), 1.), "SFH basis coefficients should add up to 1, perhaps you forgot to transform the Dirichlet samples"
 
         tage = self.cosmo.age(zred).value # age in Gyr
-        t = np.linspace(0, tage, 50) # look back time 
+        t = np.linspace(0., tage, 50) # look back time 
         
         # normalized basis out to t 
         _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
-            for i in range(4)])
+            for i in range(ncomp_sfh)])
 
         # caluclate normalized SFH
-        sfh = np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] for i in range(4)]), axis=0)
+        sfh = np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] 
+            for i in range(ncomp_sfh)]), axis=0)
 
         # multiply by stellar mass 
         sfh *= 10**tt[:,0][:,None]
@@ -478,7 +498,8 @@ class FSPS(Model):
         the bases do not truncate at tage but the entire basis is
         compressed to fit the range 0-tage.  
         '''
-        tt_sfh = tt[:,1:5] # sfh basis coefficients 
+        ncomp_sfh = self._Ncomp_sfh
+        tt_sfh = tt[:,1:ncomp_sfh+1] # sfh basis coefficients 
         
         assert isinstance(zred, float)
         tage = self.cosmo.age(zred).value # age in Gyr
@@ -488,10 +509,11 @@ class FSPS(Model):
         #_basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
         #    for i in range(4)])
         _basis = np.array([self._nmf_sfh_basis[i] / np.trapz(self._nmf_sfh_basis[i], t) 
-            for i in range(4)])
+            for i in range(ncomp_sfh)])
 
         # caluclate normalized SFH
-        sfh = np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] for i in range(4)]), axis=0)
+        sfh = np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] 
+            for i in range(ncomp_sfh)]), axis=0)
 
         # multiply by stellar mass 
         sfh *= 10**tt[:,0][:,None]
@@ -521,7 +543,7 @@ class FSPS(Model):
         if self._delayed_tau: power = 2 
         else: power = 1
 
-        t = np.linspace(sf_start, np.repeat(tage, sf_start.shape[0]), 50).T
+        t = np.linspace(np.zeros(sf_start.shape[0]), sf_start, 50).T
 
         tb      = (tburst - sf_start) / tau
         tmax    = (tage - sf_start) / tau
@@ -576,7 +598,8 @@ class FSPS(Model):
         zh : array_like[N,50]
             metallicity at cosmic time t --- ZH(t) 
         '''
-        tt_zh = tt[:,5:7] # zh bases 
+        ncomp_zh = self._Ncomp_zh
+        tt_zh = tt[:,self._Ncomp_sfh+1:self._Ncomp_sfh+ncomp_zh+1] # zh bases 
         
         assert isinstance(zred, float)
         tage = self.cosmo.age(zred).value # age in Gyr
@@ -587,10 +610,11 @@ class FSPS(Model):
             t = np.linspace(0, tage, 50)
 
         # metallicity basis is not normalized
-        _z_basis = np.array([self._zh_basis[i](t) for i in range(2)]) 
+        _z_basis = np.array([self._zh_basis[i](t) for i in range(ncomp_zh)]) 
 
         # get metallicity history
-        zh = np.sum(np.array([tt_zh[:,i][:,None] * _z_basis[i][None,:] for i in range(2)]), axis=0) 
+        zh = np.sum(np.array([tt_zh[:,i][:,None] * _z_basis[i][None,:] 
+            for i in range(ncomp_zh)]), axis=0) 
         if tt.shape[0] == 1: 
             return t, zh[0]
         else: 
@@ -619,7 +643,8 @@ class FSPS(Model):
         zh : array_like[N,50]
             metallicity at cosmic time t --- ZH(t) 
         '''
-        tt_zh = tt[:,5:7] # zh bases 
+        ncomp_zh = self._Ncomp_zh
+        tt_zh = tt[:,self._Ncomp_sfh+1:self._Ncomp_sfh+ncomp_zh+1] # zh bases 
         
         assert isinstance(zred, float)
         tage = self.cosmo.age(zred).value # age in Gyr
@@ -630,7 +655,8 @@ class FSPS(Model):
             t = np.linspace(0, tage, 50)
 
         # get metallicity history
-        zh = np.sum(np.array([tt_zh[:,i][:,None] * self._nmf_zh_basis[i][None,:] for i in range(2)]), axis=0) 
+        zh = np.sum(np.array([tt_zh[:,i][:,None] *
+            self._nmf_zh_basis[i][None,:] for i in range(ncomp_zh)]), axis=0) 
         if tt.shape[0] == 1: 
             return t, zh[0]
         else: 
@@ -667,7 +693,23 @@ class FSPS(Model):
                     'dust2',
                     'dust_index']
             self._sps_model = self._fsps_nmf
-            self._load_NMF_bases()
+            self._load_NMF_bases(name='tojeiro.4comp')
+        elif self.name in ['nmf_tng6', 'nmf_tng6_comp']: # 6 components for SFH 
+            self._sps_parameters = [
+                    'logmstar', 
+                    'beta1_sfh', 
+                    'beta2_sfh', 
+                    'beta3_sfh',
+                    'beta4_sfh', 
+                    'beta5_sfh', 
+                    'beta6_sfh', 
+                    'gamma1_zh', 
+                    'gamma2_zh', 
+                    'dust1', 
+                    'dust2',
+                    'dust_index']
+            self._sps_model = self._fsps_nmf
+            self._load_NMF_bases('tng.6comp')
         elif self.name in ['tau', 'delayed_tau']: 
             self._sps_parameters = [
                     'logmstar', 
@@ -737,7 +779,7 @@ class DESIspeculator(Model):
         super().__init__(cosmo=cosmo)
     
         # load NMF SFH and ZH bases 
-        self._load_NMF_bases()
+        self._load_NMF_bases(name='tojeiro.4comp')
 
     def sed(self, tt, zred, vdisp=0., wavelength=None, resolution=None,
             filters=None, debug=False): 
