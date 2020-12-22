@@ -119,18 +119,23 @@ class Model(object):
                 _sfh = np.concatenate([sfh[:,:i0+1], sfh_t_dt[:,None]], axis=1)
             else: 
                 # calculate average SFR over the range tcomic \in [t0, t0-dt]
-                assert tage > t0 
-                # linearly interpolate SFH to t0   
-                i0 = np.where(tlookback < t0)[0][-1]  
-                i1 = np.where(tlookback > t0)[0][0]
+                if t0 < tage: 
+                    # linearly interpolate SFH to t0   
+                    i0 = np.where(tlookback < t0)[0][-1]  
+                    i1 = np.where(tlookback > t0)[0][0]
 
-                sfh_t_t0 = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (t0 - tlookback[i0]) + sfh[:,i0]
+                    sfh_t_t0 = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (t0 - tlookback[i0]) + sfh[:,i0]
+                else: 
+                    sfh_t_t0 = np.zeros(sfh.shape[0])
                 
                 # linearly interpolate SFH to t0 - dt  
-                i0 = np.where(tlookback < t0 + dt)[0][-1]  
-                i1 = np.where(tlookback > t0 + dt)[0][0]
+                if t0 + dt < tage: 
+                    i0 = np.where(tlookback < t0 + dt)[0][-1]  
+                    i1 = np.where(tlookback > t0 + dt)[0][0]
 
-                sfh_t_t0_dt = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (t0 + dt - tlookback[i0]) + sfh[:,i0]
+                    sfh_t_t0_dt = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (t0 + dt - tlookback[i0]) + sfh[:,i0]
+                else: 
+                    sfh_t_t0_dt = np.zeros(sfh.shape[0])
 
                 i_in = (tlookback < t0 + dt) & (tlookback > t0)
     
@@ -284,14 +289,10 @@ class FSPS(Model):
         outwave, outspec, maggies = [], [], [] 
         for _tt, _zred in zip(tt, zred): 
 
-            # get tage
-            tage = self._tage_z_interp(_zred)
-
             if debug: 
-                print('FSPS.sed: redshift = %f' % zred)
-                print('FSPS.sed: tage = %f' % tage) 
+                print('FSPS.sed: redshift = %f' % _zred)
 
-            tt_arr = np.concatenate([_tt, [tage]])
+            tt_arr = np.concatenate([_tt, [_zred]])
             if debug: print('FSPS.sed: theta', tt_arr)
             
             # get SSP luminosity
@@ -370,6 +371,64 @@ class FSPS(Model):
             # initialize FSPS StellarPopulation object
             self._ssp_initiate() 
     
+        ncomp_zh = self._Ncomp_zh
+        tt_zh           = tt[-6:-4]
+        tt_dust1        = tt[-4]
+        tt_dust2        = tt[-3]
+        tt_dust_index   = tt[-2]
+        zred            = tt[-1] 
+        
+        # SFH at lookback time  
+        tlookback, sfh = self.SFH(np.concatenate([[0.], tt[:-1]]), zred)
+    
+        tages = 0.5 * (tlookback[1:] + tlookback[:-1])
+        dt = np.diff(tlookback)
+
+        # ZH at the center of the lookback time bins 
+        zh = np.sum(np.array([
+            tt_zh[i] * self._zh_basis[i](tages) for i in range(ncomp_zh)]), 
+            axis=0)
+    
+        for i, tage in enumerate(tages): 
+            m = dt[i] * 0.5 * (sfh[i] + sfh[i+1]) # mass formed in this bin 
+            if m <= 0 and i != 0: continue 
+
+            self._ssp.params['logzsol'] = np.log10(zh[i]/0.0190) # log(Z/Zsun)
+            self._ssp.params['dust1'] = tt_dust1
+            self._ssp.params['dust2'] = tt_dust2 
+            self._ssp.params['dust_index'] = tt_dust_index
+            
+            wave_rest, lum_i = self._ssp.get_spectrum(tage=tage, peraa=True) # in units of Lsun/AA
+            # note that this spectrum is normalized such that the total formed
+            # mass = 1 Msun
+
+            if i == 0: lum_ssp = np.zeros(len(wave_rest))
+            lum_ssp += m * lum_i 
+
+        return wave_rest, lum_ssp
+
+    def _fsps_nmf_v0(self, tt): 
+        ''' FSPS SPS model using NMF SFH and ZH bases 
+
+        Parameters 
+        ----------
+        tt : array_like[Nparam] 
+            Parameter values for the **default setup**
+
+
+        Returns
+        -------
+        wave_rest : array_like[Nwave] 
+            rest-frame wavelength of SSP flux 
+
+
+        lum_ssp : array_like[Nwave] 
+            FSPS SSP luminosity in units of Lsun/A
+        '''
+        if self._ssp is None: 
+            # initialize FSPS StellarPopulation object
+            self._ssp_initiate() 
+    
         ncomp_sfh = self._Ncomp_sfh
         ncomp_zh = self._Ncomp_zh
         tt_sfh          = tt[:ncomp_sfh] 
@@ -411,7 +470,7 @@ class FSPS(Model):
             lum_ssp += m * lum_i 
 
         return wave_rest, lum_ssp
-
+    
     def _fsps_tau(self, tt): 
         ''' FSPS SPS model with tau or delayed-tau model SFH  
 
@@ -461,10 +520,7 @@ class FSPS(Model):
     def SFH(self, tt, zred): 
         ''' star formation history given parameters and redshift 
         '''
-        tt = np.atleast_2d(tt)
-        if self.name in ['nmf_bases', 'nmf_tng4', 'nmf_tng6']: return self._SFH_nmf(tt, zred)
-        elif self.name in ['nmf_comp', 'nmf_tng4_comp', 'nmf_tng6_comp']: return self._SFH_nmf_compressed(tt, zred)
-        elif self.name in ['tau', 'delayed_tau']: return self._SFH_tau(tt, zred)
+        return self._SFH(np.atleast_2d(tt), zred)
 
     def _SFH_nmf(self, tt, zred): 
         ''' SFH based on NMF SFH bases
@@ -493,25 +549,38 @@ class FSPS(Model):
         else: 
             return t, sfh 
 
-    def _SFH_nmf_compressed(self, tt, zred): 
-        ''' SFH based on *compressed* NMF SFH bases. Unlike `self._SFH_nmf`,
-        the bases do not truncate at tage but the entire basis is
-        compressed to fit the range 0-tage.  
+    def _SFH_nmf_burst(self, tt, zred): 
+        ''' SFH based on NMF bases with a burst
         '''
         ncomp_sfh = self._Ncomp_sfh
         tt_sfh = tt[:,1:ncomp_sfh+1] # sfh basis coefficients 
+        fburst = tt[:,ncomp_sfh+1]
+        tburst = tt[:,ncomp_sfh+2]
         
         assert isinstance(zred, float)
+
         tage = self.cosmo.age(zred).value # age in Gyr
-        t = np.linspace(0, tage, 50) # self._nmf_sfh_basis.shape[1])
+        t = np.linspace(0., tage, 50) # look back time 
+        dt = t[1] - t[0] 
         
+        sfh = np.zeros((tt_sfh.shape[0], 50))
+        # burst contribution 
+        has_burst = (tburst < tage) # burst within the age of the galaxy 
+
+        fburst[~has_burst] = 0. 
+
+        iburst = np.floor(tburst[has_burst] / dt).astype(int)
+        dts = np.repeat(dt, 50)
+        dts[0] *= 0.5 
+        dts[-1] *= 0.5 
+        sfh[has_burst, iburst] += fburst[has_burst] / dts[iburst]
+
         # normalized basis out to t 
-        t_scaled = t * self._nmf_t_lb_sfh[-1]/tage
-        _basis = np.array([self._sfh_basis[i](t_scaled)/np.trapz(self._nmf_sfh_basis[i], self._nmf_t_lb_sfh) 
+        _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
             for i in range(ncomp_sfh)])
 
         # caluclate normalized SFH
-        sfh = np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] 
+        sfh += (1. - fburst)[:,None] * np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] 
             for i in range(ncomp_sfh)]), axis=0)
 
         # multiply by stellar mass 
@@ -556,7 +625,6 @@ class FSPS(Model):
         sfh = (np.tile(const / (tage-sf_start), (50, 1))).T
 
         # burst contribution 
-        fburst = np.atleast_1d(fburst)
         has_burst = (tb > 0)
         fburst[~has_burst] = 0. 
         iburst = np.floor(tb[has_burst] / dt[has_burst] * tau[has_burst]).astype(int)
@@ -581,11 +649,7 @@ class FSPS(Model):
     def ZH(self, tt, zred, tcosmic=None):
         ''' metallicity history 
         '''
-        tt = np.atleast_2d(tt)
-        if self.name in ['nmf_bases', 'nmf_tng4', 'nmf_tng6']: return self._ZH_nmf(tt, zred, tcosmic=tcosmic)
-        elif self.name in ['nmf_comp', 'nmf_tng4_comp', 'nmf_tng6_comp']: return self._ZH_nmf_compressed(tt, zred, tcosmic=tcosmic)
-        elif self.name in ['tau', 'delayed_tau']: 
-            return self._ZH_tau(tt, zred, tcosmic=tcosmic)
+        return self._ZH(np.atleast_2d(tt), zred, tcosmic=tcosmic) 
 
     def _ZH_nmf(self, tt, zred, tcosmic=None): 
         ''' metallicity history for a set of parameter values `tt` and redshift `zred`
@@ -632,7 +696,7 @@ class FSPS(Model):
         else: 
             return t, zh 
 
-    def _ZH_nmf_compressed(self, tt, zred, tcosmic=None): 
+    def _ZH_nmf_burst(self, tt, zred, tcosmic=None): 
         ''' metallicity history for a set of parameter values `tt` and redshift `zred`
 
         parameters
@@ -656,7 +720,7 @@ class FSPS(Model):
             metallicity at cosmic time t --- ZH(t) 
         '''
         ncomp_zh = self._Ncomp_zh
-        tt_zh = tt[:,self._Ncomp_sfh+1:self._Ncomp_sfh+ncomp_zh+1] # zh bases 
+        tt_zh = tt[:,self._Ncomp_sfh+3:self._Ncomp_sfh+ncomp_zh+3] # zh bases 
         
         assert isinstance(zred, float)
         tage = self.cosmo.age(zred).value # age in Gyr
@@ -666,9 +730,12 @@ class FSPS(Model):
         else: 
             t = np.linspace(0, tage, 50)
 
+        # metallicity basis is not normalized
+        _z_basis = np.array([self._zh_basis[i](t) for i in range(ncomp_zh)]) 
+
         # get metallicity history
-        zh = np.sum(np.array([tt_zh[:,i][:,None] *
-            self._nmf_zh_basis[i][None,:] for i in range(ncomp_zh)]), axis=0) 
+        zh = np.sum(np.array([tt_zh[:,i][:,None] * _z_basis[i][None,:] 
+            for i in range(ncomp_zh)]), axis=0) 
         if tt.shape[0] == 1: 
             return t, zh[0]
         else: 
@@ -692,7 +759,7 @@ class FSPS(Model):
     def _init_model(self, **kwargs): 
         ''' initialize theta values 
         '''
-        if self.name in ['nmf_bases', 'nmf_comp']: 
+        if self.name in ['nmf_bases']: 
             self._sps_parameters = [
                     'logmstar', 
                     'beta1_sfh', 
@@ -706,23 +773,40 @@ class FSPS(Model):
                     'dust_index']
             self._sps_model = self._fsps_nmf
             self._load_NMF_bases(name='tojeiro.4comp')
+            self._SFH   = self._SFH_nmf
+            self._ZH    = self._ZH_nmf
         elif 'nmf_tng' in self.name: # 6 components for SFH 
             icomp = int(self.name.split('_')[1][-1])
+            self._sps_parameters = [
+                            'logmstar' ] + [
+                            'beta%i_sfh' % (i+1) for i in range(icomp)] + [ 
+                            'gamma1_zh', 
+                            'gamma2_zh', 
+                            'dust1', 
+                            'dust2',
+                            'dust_index']
+            self._sps_model = self._fsps_nmf
+            self._load_NMF_bases('tng.%icomp' % icomp)
+            self._SFH   = self._SFH_nmf
+            self._ZH    = self._ZH_nmf
+        elif self.name == 'nmfburst': 
             self._sps_parameters = [
                     'logmstar', 
                     'beta1_sfh', 
                     'beta2_sfh', 
                     'beta3_sfh',
                     'beta4_sfh', 
-                    'beta5_sfh', 
-                    'beta6_sfh', 
+                    'fburst', 
+                    'tburst',   # lookback time of the universe when burst occurs (tburst < tage) 
                     'gamma1_zh', 
                     'gamma2_zh', 
                     'dust1', 
                     'dust2',
                     'dust_index']
             self._sps_model = self._fsps_nmf
-            self._load_NMF_bases('tng.%icomp' % icomp)
+            self._load_NMF_bases(name='tojeiro.4comp')
+            self._SFH   = self._SFH_nmf_burst
+            self._ZH    = self._ZH_nmf_burst 
         elif self.name in ['tau', 'delayed_tau']: 
             self._sps_parameters = [
                     'logmstar', 
@@ -730,15 +814,16 @@ class FSPS(Model):
                     'const_sfh',    # constant component 0 < C < 1 
                     'sf_start',     # start time of SFH in Gyr #'sf_trunc',     # trunctation time of the SFH in Gyr
                     'fburst',       # fraction of mass formed in an instantaneous burst of star formation
-                    'tburst',       # age of the universe when burst occurs (tburst < tage) 
+                    'tburst',       # age of the universe when burst occurs 
                     'metallicity', 
                     'dust2']
             self._sps_model = self._fsps_tau 
             if self.name == 'tau': self._delayed_tau = False
             elif self.name == 'delayed_tau': self._delayed_tau = True
+            self._SFH   = self._SFH_tau
+            self._ZH    = self._ZH_tau
         else: 
             raise NotImplementedError 
-        
         return None 
 
     def _ssp_initiate(self): 
