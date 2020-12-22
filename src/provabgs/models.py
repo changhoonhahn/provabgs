@@ -159,7 +159,7 @@ class Model(object):
         tt = np.atleast_2d(tt) 
         t, sfh = self.SFH(tt, zred) # get SFH 
         _, zh = self.ZH(tt, zred, tcosmic=t) 
-    
+
         # mass weighted average
         z_mw = np.trapz(zh * sfh, t) / (10**tt[:,0]) # np.trapz(sfh, t) should equal tt[:,0] 
 
@@ -183,17 +183,17 @@ class Model(object):
             self._nmf_t_lb_zh       = nmf_t[::-1] 
             self._nmf_sfh_basis     = nmf_sfh[:,::-1]
             self._nmf_zh_basis      = nmf_zh[:,::-1]
-
-        elif name == 'tng.6comp': 
-            fsfh = os.path.join(dir_dat, 'NMF_basis.sfh.tng6comp.txt') 
+        elif name in ['tng.4comp', 'tng.6comp']: 
+            icomp = int(name.split('.')[-1][0])
+            fsfh = os.path.join(dir_dat, 'NMF_basis.sfh.tng%icomp.txt' % icomp) 
             fzh = os.path.join(dir_dat, 'NMF_2basis_Z_components_nowgt_lin_Nc2.txt') 
-            ftsfh = os.path.join(dir_dat, 't_sfh.tng6comp.txt') 
+            ftsfh = os.path.join(dir_dat, 't_sfh.tng%icomp.txt' % icomp) 
             ftzh = os.path.join(dir_dat, 'sfh_t_int.txt') 
 
             nmf_sfh     = np.loadtxt(fsfh, unpack=True) 
             nmf_zh      = np.loadtxt(fzh) 
-            nmf_tsfh    = np.loadtxt(ft) # look back time 
-            nmf_tzh     = np.loadtxt(ft) # look back time 
+            nmf_tsfh    = np.loadtxt(ftsfh) # look back time 
+            nmf_tzh     = np.loadtxt(ftzh) # look back time 
 
             self._nmf_t_lb_sfh      = nmf_tsfh
             self._nmf_t_lb_zh       = nmf_tzh[::-1]
@@ -462,8 +462,8 @@ class FSPS(Model):
         ''' star formation history given parameters and redshift 
         '''
         tt = np.atleast_2d(tt)
-        if self.name in ['nmf_bases', 'nmf_tng6']: return self._SFH_nmf(tt, zred)
-        elif self.name == 'nmf_comp': return self._SFH_nmf_compressed(tt, zred)
+        if self.name in ['nmf_bases', 'nmf_tng4', 'nmf_tng6']: return self._SFH_nmf(tt, zred)
+        elif self.name in ['nmf_comp', 'nmf_tng4_comp', 'nmf_tng6_comp']: return self._SFH_nmf_compressed(tt, zred)
         elif self.name in ['tau', 'delayed_tau']: return self._SFH_tau(tt, zred)
 
     def _SFH_nmf(self, tt, zred): 
@@ -503,12 +503,11 @@ class FSPS(Model):
         
         assert isinstance(zred, float)
         tage = self.cosmo.age(zred).value # age in Gyr
-        t = np.linspace(0, tage, 50)
+        t = np.linspace(0, tage, 50) # self._nmf_sfh_basis.shape[1])
         
         # normalized basis out to t 
-        #_basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
-        #    for i in range(4)])
-        _basis = np.array([self._nmf_sfh_basis[i] / np.trapz(self._nmf_sfh_basis[i], t) 
+        t_scaled = t * self._nmf_t_lb_sfh[-1]/tage
+        _basis = np.array([self._sfh_basis[i](t_scaled)/np.trapz(self._nmf_sfh_basis[i], self._nmf_t_lb_sfh) 
             for i in range(ncomp_sfh)])
 
         # caluclate normalized SFH
@@ -528,6 +527,8 @@ class FSPS(Model):
 
         Notes
         -----
+        * 12/22/2020: decided to have SFH integrate to 1 by using numerically
+           integrated normalization rather than analytic  
         * There are some numerical errors where the SFH integrates to slightly
             greater than one. It should be good enough for most purposes. 
         '''
@@ -543,35 +544,46 @@ class FSPS(Model):
         if self._delayed_tau: power = 2 
         else: power = 1
 
-        t = np.linspace(np.zeros(sf_start.shape[0]), sf_start, 50).T
-
+        t = np.linspace(sf_start, np.repeat(tage, sf_start.shape[0]), 50).T 
+        tlookback = t - sf_start[:,None]
+        dt = np.diff(t, axis=1)[:,0]
+        
         tb      = (tburst - sf_start) / tau
         tmax    = (tage - sf_start) / tau
         normalized_t = (t - sf_start[:,None])/tau[:,None]
         
         # constant contribution 
-        sfh = (np.tile(const / 50, (50, 1))).T
+        sfh = (np.tile(const / (tage-sf_start), (50, 1))).T
+
+        # burst contribution 
+        fburst = np.atleast_1d(fburst)
+        has_burst = (tb > 0)
+        fburst[~has_burst] = 0. 
+        iburst = np.floor(tb[has_burst] / dt[has_burst] * tau[has_burst]).astype(int)
+        dts = (np.tile(dt, (50, 1))).T
+        dts[:,0] *= 0.5 
+        dts[:,-1] *= 0.5 
+        sfh[has_burst, iburst] += fburst[has_burst] / dts[has_burst, iburst]
+
         # tau contribution 
         ftau = (1. - const - fburst) 
-        sfh += ftau[:,None] * (normalized_t **(power - 1) *
-                np.exp(-normalized_t) / gammainc(power, tmax.T)[:,None])
-        # burst contribution 
-        has_burst = np.where(tb > 0)[0] 
-        iburst = np.floor(tb[has_burst] / (tmax[has_burst]/50.)).astype(int)
-        sfh[has_burst, iburst] += fburst[has_burst]
-
+        sfh_tau = (normalized_t **(power - 1) * np.exp(-normalized_t))
+        sfh += sfh_tau * (ftau / tau / np.trapz(sfh_tau, normalized_t))[:,None]
+        #sfh += ftau[:,None] / tau[:,None] * (normalized_t **(power - 1) *
+        #        np.exp(-normalized_t) / gammainc(power, tmax.T)[:,None])
+        
         sfh *= 10**tt[:,0][:,None]
         if tt.shape[0] == 1: 
-            return t[0], sfh[0]
+            return tlookback[0], sfh[0][::-1]
         else: 
-            return t, sfh 
+            return tlookback, sfh[:,::-1]
 
     def ZH(self, tt, zred, tcosmic=None):
         ''' metallicity history 
         '''
         tt = np.atleast_2d(tt)
-        if self.name == 'nmf_bases': return self._ZH_nmf(tt, zred, tcosmic=tcosmic)
-        elif self.name == 'nmf_comp': return self._ZH_nmf_compressed(tt, zred, tcosmic=tcosmic)
+        if self.name in ['nmf_bases', 'nmf_tng4', 'nmf_tng6']: return self._ZH_nmf(tt, zred, tcosmic=tcosmic)
+        elif self.name in ['nmf_comp', 'nmf_tng4_comp', 'nmf_tng6_comp']: return self._ZH_nmf_compressed(tt, zred, tcosmic=tcosmic)
         elif self.name in ['tau', 'delayed_tau']: 
             return self._ZH_tau(tt, zred, tcosmic=tcosmic)
 
@@ -694,7 +706,8 @@ class FSPS(Model):
                     'dust_index']
             self._sps_model = self._fsps_nmf
             self._load_NMF_bases(name='tojeiro.4comp')
-        elif self.name in ['nmf_tng6', 'nmf_tng6_comp']: # 6 components for SFH 
+        elif 'nmf_tng' in self.name: # 6 components for SFH 
+            icomp = int(self.name.split('_')[1][-1])
             self._sps_parameters = [
                     'logmstar', 
                     'beta1_sfh', 
@@ -709,7 +722,7 @@ class FSPS(Model):
                     'dust2',
                     'dust_index']
             self._sps_model = self._fsps_nmf
-            self._load_NMF_bases('tng.6comp')
+            self._load_NMF_bases('tng.%icomp' % icomp)
         elif self.name in ['tau', 'delayed_tau']: 
             self._sps_parameters = [
                     'logmstar', 
