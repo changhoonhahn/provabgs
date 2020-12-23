@@ -366,6 +366,14 @@ class FSPS(Model):
 
         lum_ssp : array_like[Nwave] 
             FSPS SSP luminosity in units of Lsun/A
+
+        Notes
+        -----
+        * 12/23/2020: age of SSPs are no longer set to the center of the
+          lookback time as this  ignores the youngest tage ~ 0 SSP, which have
+          significant contributions. Also we set a minimum tage = 1e-8 because
+          FSPS returns a grid for tage = 0 but 1e-8 gets the youngest isochrone
+          anyway. 
         '''
         if self._ssp is None: 
             # initialize FSPS StellarPopulation object
@@ -380,25 +388,26 @@ class FSPS(Model):
         
         # SFH at lookback time  
         tlookback, sfh = self.SFH(np.concatenate([[0.], tt[:-1]]), zred)
+        # ZH at lookback time bins 
+        _, zh = self.ZH(np.concatenate([[0.], tt[:-1]]), zred)
     
-        tages = 0.5 * (tlookback[1:] + tlookback[:-1])
-        dt = np.diff(tlookback)
-
-        # ZH at the center of the lookback time bins 
-        zh = np.sum(np.array([
-            tt_zh[i] * self._zh_basis[i](tages) for i in range(ncomp_zh)]), 
-            axis=0)
+        dt = np.zeros(len(tlookback))
+        dt[1:-1] = 0.5 * (np.diff(tlookback)[1:] + np.diff(tlookback)[:-1]) 
+        dt[0]   = 0.5 * (tlookback[1] - tlookback[0]) 
+        dt[-1]  = 0.5 * (tlookback[-1] - tlookback[-2]) 
     
-        for i, tage in enumerate(tages): 
-            m = dt[i] * 0.5 * (sfh[i] + sfh[i+1]) # mass formed in this bin 
-            if m <= 0 and i != 0: continue 
+        for i, tage in enumerate(tlookback): 
+            m = dt[i] * sfh[i] # mass formed in this bin 
+            if m == 0 and i != 0: continue 
 
             self._ssp.params['logzsol'] = np.log10(zh[i]/0.0190) # log(Z/Zsun)
             self._ssp.params['dust1'] = tt_dust1
             self._ssp.params['dust2'] = tt_dust2 
             self._ssp.params['dust_index'] = tt_dust_index
             
-            wave_rest, lum_i = self._ssp.get_spectrum(tage=tage, peraa=True) # in units of Lsun/AA
+            wave_rest, lum_i = self._ssp.get_spectrum(
+                    tage=np.clip(tage, 1e-8, None), 
+                    peraa=True) # in units of Lsun/AA
             # note that this spectrum is normalized such that the total formed
             # mass = 1 Msun
 
@@ -438,7 +447,7 @@ class FSPS(Model):
         tt_dust_index   = tt[ncomp_sfh+ncomp_zh+2]
         tage            = tt[ncomp_sfh+ncomp_zh+3] 
     
-        tlookback = np.linspace(0, tage, 50) # lookback time edges
+        tlookback = np.linspace(0, tage, 100) # lookback time edges
         tages = 0.5 * (tlookback[1:] + tlookback[:-1])
         dt = np.diff(tlookback)
 
@@ -531,7 +540,7 @@ class FSPS(Model):
         assert isinstance(zred, float)
 
         tage = self.cosmo.age(zred).value # age in Gyr
-        t = np.linspace(0., tage, 50) # look back time 
+        t = np.linspace(0., tage, 100) # look back time 
         
         # normalized basis out to t 
         _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
@@ -560,17 +569,17 @@ class FSPS(Model):
         assert isinstance(zred, float)
 
         tage = self.cosmo.age(zred).value # age in Gyr
-        t = np.linspace(0., tage, 50) # look back time 
+        t = np.linspace(0., tage, 100) # look back time 
         dt = t[1] - t[0] 
         
-        sfh = np.zeros((tt_sfh.shape[0], 50))
+        sfh = np.zeros((tt_sfh.shape[0], 100))
         # burst contribution 
         has_burst = (tburst < tage) # burst within the age of the galaxy 
 
         fburst[~has_burst] = 0. 
 
         iburst = np.floor(tburst[has_burst] / dt).astype(int)
-        dts = np.repeat(dt, 50)
+        dts = np.repeat(dt, 100)
         dts[0] *= 0.5 
         dts[-1] *= 0.5 
         sfh[has_burst, iburst] += fburst[has_burst] / dts[iburst]
@@ -613,7 +622,7 @@ class FSPS(Model):
         if self._delayed_tau: power = 2 
         else: power = 1
 
-        t = np.linspace(sf_start, np.repeat(tage, sf_start.shape[0]), 50).T 
+        t = np.linspace(sf_start, np.repeat(tage, sf_start.shape[0]), 100).T 
         tlookback = t - sf_start[:,None]
         dt = np.diff(t, axis=1)[:,0]
         
@@ -622,13 +631,13 @@ class FSPS(Model):
         normalized_t = (t - sf_start[:,None])/tau[:,None]
         
         # constant contribution 
-        sfh = (np.tile(const / (tage-sf_start), (50, 1))).T
+        sfh = (np.tile(const / (tage-sf_start), (100, 1))).T
 
         # burst contribution 
         has_burst = (tb > 0)
         fburst[~has_burst] = 0. 
         iburst = np.floor(tb[has_burst] / dt[has_burst] * tau[has_burst]).astype(int)
-        dts = (np.tile(dt, (50, 1))).T
+        dts = (np.tile(dt, (100, 1))).T
         dts[:,0] *= 0.5 
         dts[:,-1] *= 0.5 
         sfh[has_burst, iburst] += fburst[has_burst] / dts[has_burst, iburst]
@@ -668,10 +677,10 @@ class FSPS(Model):
 
         Returns 
         -------
-        t : array_like[50,]
+        t : array_like[100,]
             cosmic time linearly spaced from 0 to the age of the galaxy
 
-        zh : array_like[N,50]
+        zh : array_like[N,100]
             metallicity at cosmic time t --- ZH(t) 
         '''
         ncomp_zh = self._Ncomp_zh
@@ -683,7 +692,7 @@ class FSPS(Model):
             assert tage >= np.max(tcosmic) 
             t = tcosmic.copy() 
         else: 
-            t = np.linspace(0, tage, 50)
+            t = np.linspace(0, tage, 100)
 
         # metallicity basis is not normalized
         _z_basis = np.array([self._zh_basis[i](t) for i in range(ncomp_zh)]) 
@@ -713,10 +722,10 @@ class FSPS(Model):
 
         Returns 
         -------
-        t : array_like[50,]
+        t : array_like[100,]
             cosmic time linearly spaced from 0 to the age of the galaxy
 
-        zh : array_like[N,50]
+        zh : array_like[N,100]
             metallicity at cosmic time t --- ZH(t) 
         '''
         ncomp_zh = self._Ncomp_zh
@@ -728,7 +737,7 @@ class FSPS(Model):
             assert tage >= np.max(tcosmic) 
             t = tcosmic.copy() 
         else: 
-            t = np.linspace(0, tage, 50)
+            t = np.linspace(0, tage, 100)
 
         # metallicity basis is not normalized
         _z_basis = np.array([self._zh_basis[i](t) for i in range(ncomp_zh)]) 
@@ -752,9 +761,9 @@ class FSPS(Model):
             assert tage >= np.max(tcosmic) 
             t = tcosmic.copy() 
         else: 
-            t = np.linspace(0, tage, 50)
+            t = np.linspace(0, tage, 100)
         
-        return t, np.tile(np.atleast_2d(Z).T, (1, 50))
+        return t, np.tile(np.atleast_2d(Z).T, (1, 100))
 
     def _init_model(self, **kwargs): 
         ''' initialize theta values 
@@ -830,7 +839,7 @@ class FSPS(Model):
         ''' initialize sps (FSPS StellarPopulaiton object) 
         '''
         import fsps
-        if self.name in ['nmf_bases', 'nmf_comp']: 
+        if self.name in ['nmf_bases', 'nmfburst']: 
             sfh         = 0 
             dust_type   = 4
             imf_type    = 1 # chabrier
@@ -1053,10 +1062,10 @@ class DESIspeculator(Model):
 
         Returns 
         -------
-        t : array_like[50,]
+        t : array_like[100,]
             age of the galaxy, linearly spaced from 0 to the age of the galaxy
 
-        sfh : array_like[N,50]
+        sfh : array_like[N,100]
             star formation history at cosmic time t --- SFH(t) --- in units of
             Msun/**Gyr**. np.trapz(sfh, t) == Mstar 
         '''
@@ -1065,7 +1074,7 @@ class DESIspeculator(Model):
         
         assert isinstance(zred, float)
         tage = self.cosmo.age(zred).value # age in Gyr
-        t = np.linspace(0, tage, 50)
+        t = np.linspace(0, tage, 100)
         
         # normalized basis out to t 
         _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
@@ -1096,10 +1105,10 @@ class DESIspeculator(Model):
 
         Returns 
         -------
-        t : array_like[50,]
+        t : array_like[100,]
             cosmic time linearly spaced from 0 to the age of the galaxy
 
-        zh : array_like[N,50]
+        zh : array_like[N,100]
             metallicity at cosmic time t --- ZH(t) 
         '''
         tt = np.atleast_2d(tt)
@@ -1111,7 +1120,7 @@ class DESIspeculator(Model):
             assert tage >= np.max(tcosmic) 
             t = tcosmic.copy() 
         else: 
-            t = np.linspace(0, tage, 50)
+            t = np.linspace(0, tage, 100)
     
         # metallicity basis is not normalized
         _z_basis = np.array([self._zh_basis[i](t) for i in range(2)]) 
