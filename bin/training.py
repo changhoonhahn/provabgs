@@ -26,11 +26,11 @@ def prior_nmf(ncomp):
         ])
 
 
-def prior_nmf(ncomp): 
+def prior_nmfburst(): 
     ''' prior on 4 component NMF by Rita
     '''
     return Infer.load_priors([
-        Infer.FlatDirichletPrior(ncomp, label='sed'),   # flat dirichilet priors
+        Infer.FlatDirichletPrior(4, label='sed'),   # flat dirichilet priors
         Infer.UniformPrior(0., 1.),                     # uniform priors fburst
         Infer.UniformPrior(0., 13.8),                   # uniform priors tburst 
         Infer.UniformPrior(6.9e-5, 7.3e-3, label='sed'),# uniform priors on ZH coeff
@@ -89,7 +89,7 @@ def fsps_prior_samples(name, ibatch, ncpu=1):
         print()  
         print('--- batch %i ---' % ibatch)
         # save parameters sampled from prior 
-        print('  saving thetas to %s' % ftheta 
+        print('  saving thetas to %s' % ftheta)
         np.save(ftheta, thetas)
 
         if (ncpu == 1): # run on serial 

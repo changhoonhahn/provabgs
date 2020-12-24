@@ -12,7 +12,7 @@ def deploy_training_job(ibatch, name, ncpu=1):
     cntnt = '\n'.join([
         "#!/bin/bash", 
         "#SBATCH --qos=regular", 
-        "#SBATCH --time=00:30:00", 
+        "#SBATCH --time=00:20:00", 
         "#SBATCH --constraint=haswell", 
         "#SBATCH -N 1", 
         "#SBATCH -J train%i" % ibatch,  
@@ -24,7 +24,7 @@ def deploy_training_job(ibatch, name, ncpu=1):
         "", 
         "conda activate gqp", 
         "",
-        "python /global/homes/c/chahah/projects/provabgs/bin/training.py %s %i %i" % (model, ibatch, ncpu), 
+        "python /global/homes/c/chahah/projects/provabgs/bin/training.py %s %i %i" % (name, ibatch, ncpu), 
         'now=$(date +"%T")', 
         'echo "end time ... $now"', 
         ""]) 
