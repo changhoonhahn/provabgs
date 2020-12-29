@@ -22,7 +22,7 @@ def prior_nmf(ncomp):
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust2
         Infer.UniformPrior(-2.2, 0.4, label='sed'),     # uniform priors on dust_index 
-        Infer.UniformPrior(8., 13.8, label='sed')       # uniformly sample tage 
+        Infer.UniformPrior(0., 0.6, label='sed')       # uniformly sample redshift
         ])
 
 
@@ -38,7 +38,7 @@ def prior_nmfburst():
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust2
         Infer.UniformPrior(-2.2, 0.4, label='sed'),     # uniform priors on dust_index 
-        Infer.UniformPrior(8., 13.8, label='sed')       # uniformly sample tage 
+        Infer.UniformPrior(0., 0.6, label='sed')       # uniformly sample redshift 
         ])
 
 
