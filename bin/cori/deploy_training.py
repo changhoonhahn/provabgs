@@ -12,7 +12,7 @@ def deploy_training_job(ibatch, name, ncpu=1):
     cntnt = '\n'.join([
         "#!/bin/bash", 
         "#SBATCH --qos=regular", 
-        "#SBATCH --time=00:20:00", 
+        "#SBATCH --time=01:00:00", 
         "#SBATCH --constraint=haswell", 
         "#SBATCH -N 1", 
         "#SBATCH -J train%i" % ibatch,  
