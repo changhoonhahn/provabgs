@@ -22,10 +22,12 @@ wave_bins = [(wave < 4500), ((wave >= 4500) & (wave < 6500)), (wave >= 6500)]
 
 n_hidden = [Nunits for i in range(Nlayer)]
 #-------------------------------------------------------
+if model == 'nmf_bases': n_param = 10
+elif model == 'nmfbases': n_param = 12
 # load trained PCA basis object
 print('training PCA bases')
 PCABasis = SpectrumPCA(
-        n_parameters=10,       # number of parameters
+        n_parameters=n_param,       # number of parameters
         n_wavelengths=np.sum(wave_bins[i_wave]),       # number of wavelength values
         n_pcas=n_pcas,              # number of pca coefficients to include in the basis
         spectrum_filenames=None,  # list of filenames containing the (un-normalized) log spectra for training the PCA
@@ -45,13 +47,11 @@ _training_pca = np.load(os.path.join(dat_dir,
 training_theta = tf.convert_to_tensor(_training_theta.astype(np.float32))
 training_pca = tf.convert_to_tensor(_training_pca.astype(np.float32))
 
-if model == 'nmf_bases': n_param = 10
-elif model == 'nmfbases': n_param = 12
 
 # train Speculator
 speculator = Speculator(
         n_parameters=n_param, # number of model parameters
-        wavelengths=wave, # array of wavelengths
+        wavelengths=wave[wave_bins[i_wave]], # array of wavelengths
         pca_transform_matrix=PCABasis.pca_transform_matrix,
         parameters_shift=PCABasis.parameters_shift,
         parameters_scale=PCABasis.parameters_scale,
