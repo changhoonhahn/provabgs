@@ -23,7 +23,8 @@ wave_bins = [(wave < 4500), ((wave >= 4500) & (wave < 6500)), (wave >= 6500)]
 n_hidden = [Nunits for i in range(Nlayer)]
 #-------------------------------------------------------
 if model == 'nmf_bases': n_param = 10
-elif model == 'nmfbases': n_param = 12
+elif model == 'nmfburst': n_param = 12
+
 # load trained PCA basis object
 print('training PCA bases')
 PCABasis = SpectrumPCA(
@@ -76,7 +77,7 @@ patience = 40
 
 # writeout loss 
 _floss = os.path.join(dat_dir, 
-        'fsps.%s.seed0_499.w%i.pca%i.%ix%i.loss.dat' % (model, i_wave, n_pcas, Nlayer, Nunits)))
+        'fsps.%s.seed0_499.w%i.pca%i.%ix%i.loss.dat' % (model, i_wave, n_pcas, Nlayer, Nunits))
 floss = open(_floss, 'w')
 floss.close()
 

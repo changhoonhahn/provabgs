@@ -29,7 +29,7 @@ def deploy_emu_train(model, i_wave, n_pcas, Nlayer, Nunits):
         "module load anaconda3", 
         "conda activate tf2-gpu", 
         "",
-        "python /home/chhahn/projects/provabgs/bin/emulator.py %s %i %i %i %i %i" % (model, i_wave, n_pcas, Nlayer, Nunits),
+        "python /home/chhahn/projects/provabgs/bin/emulator.py %s %i %i %i %i" % (model, i_wave, n_pcas, Nlayer, Nunits),
         'now=$(date +"%T")', 
         'echo "end time ... $now"', 
         ""]) 
