@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 model = 'nmfburst'
 
 # number of PCA components 
-n_pcas  = [50, 30, 30]
+n_pcas  = [60, 30, 30]
 
 # number of parameters
 if model == 'nmf_bases':
@@ -100,4 +100,5 @@ for iwave in range(len(wave_bins)):
     if iwave == 0: sub.set_ylabel(r'$(f_{\rm pca} - f_{\rm fsps})/f_{\rm fsps}$', fontsize=25) 
     sub.set_ylim(-0.03, 0.03) 
     if iwave != 0 : sub.set_yticklabels([])
-fig.savefig('fsps.%s.valid_pca.png' % model, bbox_inches='tight') 
+
+fig.savefig('fsps.%s.valid_pca.%i_%i_%i.png' % (model, n_pcas[0], n_pcas[1], n_pcas[2]), bbox_inches='tight') 
