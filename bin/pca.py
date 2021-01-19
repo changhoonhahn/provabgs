@@ -74,7 +74,7 @@ def train_pca_3wavebins(name, batch0, batch1, n_pca, i_bin):
     if name == 'nmf_bases': 
         # theta = [b1, b2, b3, b4, g1, g2, dust1, dust2, dust_index, zred]
         n_param = 10 
-    elif model == 'nmfburst': 
+    elif name == 'nmfburst': 
         # theta = [b1, b2, b3, b4, fburst, tburst, g1, g2, dust1, dust2, dust_index, zred]
         n_param = 12 
     n_wave = np.sum(wave_bin) 
@@ -109,6 +109,6 @@ if __name__=="__main__":
     if job == 'train': 
         n_pca = int(sys.argv[5]) 
         i_bin = int(sys.argv[6])
-        train_pca_3wavebins(model, ibatch0, ibatch1, n_pca, i_bin)
+        train_pca_3wavebins(name, ibatch0, ibatch1, n_pca, i_bin)
     elif job == 'divide': 
         divide_trainingset_3wavebins(name, ibatch0, ibatch1) 
