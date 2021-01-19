@@ -16,7 +16,7 @@ model = 'nmfburst'
 n_pcas  = [50, 30, 30]
 
 # architectures
-archs = ['4x256.', '4x256.', '4x256.']
+archs = ['4x256.', '6x256.', '4x256.']
 
 # number of parameters
 if model == 'nmf_bases':
@@ -49,7 +49,7 @@ sub.set_ylabel('loss', fontsize=25)
 sub.set_yscale('log')
 sub.set_xlabel('Epochs', fontsize=25)
 sub.set_xlim(0, loss.shape[0])
-fig.savefig('fsps.%s.valid_emu.loss.png' % model, bbox_inches='tight') 
+fig.savefig('fsps.%s.%svalid_emu.loss.png' % (model, ''.join(archs)), bbox_inches='tight') 
 
 
 # read in test parameters and data
@@ -115,7 +115,7 @@ for iwave in range(3):
     if iwave == 0: sub.set_ylabel(r'$(f_{\rm emu} - f_{\rm fsps})/f_{\rm fsps}$', fontsize=25) 
     sub.set_ylim(-0.03, 0.03) 
     if iwave != 0 : sub.set_yticklabels([])
-fig.savefig('fsps.%s.valid_emu.png' % model, bbox_inches='tight') 
+fig.savefig('fsps.%s.%svalid_emu.png' % (model, ''.join(archs)), bbox_inches='tight') 
 
 # plot cumulative fractional error
 mean_frac_dspectrum = np.mean(np.abs(1. - np.exp(lnspec_recon - lnspec_test)), axis=1)
@@ -130,4 +130,4 @@ sub.set_xlabel(r'${\rm mean}_\lambda \langle (f_{\rm emu}  - f_{\rm fsps}) / f_{
 sub.set_xlim(0., 0.03)
 sub.set_ylabel('cumulative distribution', fontsize=20)
 sub.set_ylim(0., 1.)
-fig.savefig('fsps.%s.valid_emu.cum.png' % model, bbox_inches='tight') 
+fig.savefig('fsps.%s.%svalid_emu.cum.png' % (model, ''.join(archs)), bbox_inches='tight') 
