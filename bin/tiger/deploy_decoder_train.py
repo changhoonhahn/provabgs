@@ -6,11 +6,11 @@ python script to deploy slurm job for training the decoder
 import os, sys 
 
 
-def deploy_decoder_train(model, batch0, batch1): 
+def deploy_decoder_train(model, nbatch): 
     ''' create slurm script for training speculator and then submit 
     '''
     cntnt = '\n'.join(["#!/bin/bash", 
-        "#SBATCH -J train_decoder_%s%i_%i" % (model, batch0, batch1),  
+        "#SBATCH -J train_decoder_%s%i" % (model, nbatch),  
         "#SBATCH --exclusive",
         "#SBATCH --nodes=1",
         "#SBATCH --ntasks-per-node=1",
@@ -18,7 +18,7 @@ def deploy_decoder_train(model, batch0, batch1):
         "#SBATCH --partition=general",
         "#SBATCH --time=23:59:59", 
         "#SBATCH --export=ALL",
-        "#SBATCH --output=ofiles/train_decoder_%s%i_%i.o" % (model, batch0, batch1),
+        "#SBATCH --output=ofiles/train_decoder_%s%i.o" % (model, nbatch),
         "#SBATCH --mail-type=begin", 
         "#SBATCH --mail-type=end", 
         "#SBATCH --mail-user=chhahn@princeton.edu",
@@ -29,7 +29,7 @@ def deploy_decoder_train(model, batch0, batch1):
         "module load anaconda3", 
         "conda activate torch-env", 
         "",
-        "python /home/chhahn/projects/provabgs/bin/decoder.py %s %i %i" % (model, batch0, batch1), 
+        "python /home/chhahn/projects/provabgs/bin/decoder.py %s %i" % (model, nbatch), 
         "", 
         'now=$(date +"%T")', 
         'echo "end time ... $now"', 
@@ -44,6 +44,5 @@ def deploy_decoder_train(model, batch0, batch1):
     return None 
 
 model = sys.argv[1]
-batch0 = int(sys.argv[2]) 
-batch1 = int(sys.argv[3]) 
-deploy_decoder_train(model, batch0, batch1) 
+nbatch = int(sys.argv[2]) 
+deploy_decoder_train(model, nbatch) 
