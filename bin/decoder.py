@@ -4,6 +4,7 @@ python script to train a decoder
 
 
 '''
+import os, sys 
 import numpy as np
 import torch
 from torch import nn
@@ -13,7 +14,7 @@ from torch.nn import functional as F
 #-------------------------------------------------------
 # params 
 #-------------------------------------------------------
-model = sys.argv[1]
+name = sys.argv[1]
 nbatch = int(sys.argv[2]) 
 #-------------------------------------------------------
 
@@ -24,12 +25,17 @@ nwave = len(np.load(os.path.join(dat_dir, 'wave_fsps.npy')))
 # average and sigma of ln(spectra)
 mu_lnspec = np.zeros(nwave)
 for i in range(nbatch): 
-    mu_lnspec += np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (model, i)))/float(nbatch)
+    mu_lnspec += np.mean(np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (name, i))), axis=0)/float(nbatch)
 
 sig_lnspec = np.zeros(nwave) 
 for i in range(nbatch): 
-    sig_lnspec += np.sum((np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (model, i))) - mu_lnspec)**2)/float(nbatch)
+    sig_lnspec += np.sum((np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (name, i))) - mu_lnspec)**2, axis=0)/float(nbatch)
 sig_lnspec = np.sqrt(sig_lnspec) 
+
+n_theta     = (np.load(os.path.join(dat_dir, 'fsps.%s.theta.seed%i.npy' % (name, i)))).shape[1]
+n_lnspec    = len(mu_lnspec) 
+print('n_theta = %i' % n_theta) 
+print('n_lnspec = %i' % n_lnspec) 
 
 
 class Decoder(nn.Module):
@@ -64,17 +70,17 @@ def train(): #model, optimizer, epoch, min_valid_loss, badepochs
     train_loss = 0
     for i in range(nbatch): #batch_idx, data in enumerate(train_loader): 
         tt = torch.tensor(np.load(os.path.join(dat_dir,
-            'fsps.%s.theta.seed%i.npy' % (model, i))), 
+            'fsps.%s.theta.seed%i.npy' % (name, i))), 
             dtype=torch.float32)
         lns = torch.tensor((np.load(os.path.join(dat_dir, 
-            'fsps.%s.lnspectrum.seed%i.npy' % (model, i))) -
+            'fsps.%s.lnspectrum.seed%i.npy' % (name, i))) -
             mu_lnspec)/sig_lnspec, dtype=torch.float32)
         optimizer.zero_grad()
         loss = model.loss(tt, lns)
         loss.backward()
         train_loss += loss.item()
         optimizer.step()
-    train_loss /= len(train_loader.dataset)
+    train_loss /= nbatch
     return train_loss
 
 
@@ -117,6 +123,6 @@ for config in range(n_config):
         if (not stopper.step(train_loss)) or (epoch == epochs):
             print('Stopping')
             print('====> Epoch: {} TRAINING Loss: {:.2e}'.format(epoch, train_loss))
-            torch.save(model, 'decoder.fsps.%s.seed%i_%i.final.pth' % (model, batch0, batch1))
+            torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.%ibatches.final.pth' % (name, nbatch)))
             break 
-        torch.save(model, 'decoder.fsps.%s.seed%i_%i.pth' % (model, batch0, batch1))
+        torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.%ibatches.pth' % (name, nbatch)))
