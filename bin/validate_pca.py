@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 model = 'nmfburst'
 
 # number of PCA components 
-n_pcas  = [60, 30, 30]
+n_pcas  = [70, 30, 30]
 
 # number of parameters
 if model == 'nmf_bases':
@@ -20,6 +20,8 @@ elif model == 'nmfburst':
     n_param = 12 
 
 dat_dir = '/Users/chahah/data/provabgs/'
+if 'NERSC_HOST' in os.environ: 
+    dat_dir = '/global/cscratch1/sd/chahah/provabgs/'
 
 # read in wavelenght values 
 wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy'))
@@ -39,7 +41,7 @@ for i in range(len(n_pcas)):
             parameter_selection=None) # pass an optional function that takes in parameter vector(s) and returns True/False for any extra parameter cuts we want to impose on the training sample (eg we may want to restrict the parameter ranges)
 
     fpca = os.path.join(dat_dir, 
-            'fsps.%s.seed0_499.w%i.pca%i.hdf5' % (model, i, n_pcas[i]))
+            'fsps.%s.seed0_999.w%i.pca%i.hdf5' % (model, i, n_pcas[i]))
     PCABasis._load_from_file(fpca) 
     PCABases.append(PCABasis)
 

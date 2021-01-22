@@ -11,8 +11,8 @@ def deploy_pca_job(name, ibatch0, ibatch1, n_pca, i_bin):
     '''
     cntnt = '\n'.join([
         "#!/bin/bash", 
-        "#SBATCH --qos=debug", 
-        "#SBATCH --time=00:30:00", 
+        "#SBATCH --qos=regular", 
+        "#SBATCH --time=03:00:00", 
         "#SBATCH --constraint=haswell", 
         "#SBATCH -N 1", 
         "#SBATCH -J pca_%i" % i_bin,  
