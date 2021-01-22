@@ -23,17 +23,29 @@ dat_dir = '/tigress/chhahn/provabgs/'
 nwave = len(np.load(os.path.join(dat_dir, 'wave_fsps.npy')))
 
 # average and sigma of ln(spectra)
-mu_lnspec = np.zeros(nwave)
-for i in range(nbatch): 
-    mu_lnspec += np.mean(np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (name, i))), axis=0)/float(nbatch)
+fshift = os.path.join(dat_dir, 'fsps.%s.shift_lnspectrum.%i.npy' % (name, nbatch))
+if not os.path.isfile(fshift): 
+    shift_lnspec = np.zeros(nwave)
+    for i in range(nbatch): 
+        shift_lnspec += np.mean(np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (name, i))), axis=0)/float(nbatch)
+    np.save(fshift, shift_lnspec)
+else: 
+    shift_lnspec = np.load(fshift) 
 
-sig_lnspec = np.zeros(nwave) 
-for i in range(nbatch): 
-    sig_lnspec += np.sum((np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (name, i))) - mu_lnspec)**2, axis=0)/float(nbatch)
-sig_lnspec = np.sqrt(sig_lnspec) 
+fscale = os.path.join(dat_dir, 'fsps.%s.scale_lnspectrum.%i.npy' % (name, nbatch))
+if not os.path.isfile(fscale): 
+    scale_lnspec = np.zeros(nwave) 
+    for i in range(nbatch): 
+        scale_lnspec += np.std(np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (name, i))), axis=0)/float(nbatch)
+    np.save(fscale, scale_lnspec)
+else: 
+    scale_lnspec = np.load(fscale) 
 
-n_theta     = (np.load(os.path.join(dat_dir, 'fsps.%s.theta.seed%i.npy' % (name, i)))).shape[1]
-n_lnspec    = len(mu_lnspec) 
+print(shift_lnspec)
+print(scale_lnspec) 
+
+n_theta     = (np.load(os.path.join(dat_dir, 'fsps.%s.theta.seed0.npy' % name))).shape[1]
+n_lnspec    = len(shift_lnspec) 
 print('n_theta = %i' % n_theta) 
 print('n_lnspec = %i' % n_lnspec) 
 
@@ -65,7 +77,9 @@ class Decoder(nn.Module):
         return MSE
 
 
-def train(): #model, optimizer, epoch, min_valid_loss, badepochs
+def train(batch_size): #model, optimizer, epoch, min_valid_loss, badepochs
+    ''' train by looping through files with 10,000 SEDs and for each file, looping through batch_size batches.
+    '''
     model.train()
     train_loss = 0
     for i in range(nbatch): #batch_idx, data in enumerate(train_loader): 
@@ -74,12 +88,20 @@ def train(): #model, optimizer, epoch, min_valid_loss, badepochs
             dtype=torch.float32)
         lns = torch.tensor((np.load(os.path.join(dat_dir, 
             'fsps.%s.lnspectrum.seed%i.npy' % (name, i))) -
-            mu_lnspec)/sig_lnspec, dtype=torch.float32)
-        optimizer.zero_grad()
-        loss = model.loss(tt, lns)
-        loss.backward()
-        train_loss += loss.item()
-        optimizer.step()
+            shift_lnspec)/scale_lnspec, dtype=torch.float32)
+
+        train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(tt, lns),
+                batch_size=batch_size)
+        _train_loss = 0
+        for data in train_loader: 
+            _tt, _lns = data
+            optimizer.zero_grad()
+            loss = model.loss(_tt, _lns)
+            loss.backward()
+            _train_loss += loss.item()
+            optimizer.step()
+        _train_loss /= len(train_loader.dataset)
+        train_loss += _train_loss 
     train_loss /= nbatch
     return train_loss
 
@@ -102,6 +124,8 @@ class EarlyStopper:
 
 epochs = 200
 n_config = 1
+batch_sizes = [100, 1000, 5000, 10000]
+ibatch = 0 
 
 for config in range(n_config):
     dropout = 0. #0.9*np.random.uniform()
@@ -114,15 +138,16 @@ for config in range(n_config):
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=5)
     stopper = EarlyStopper(patience=10)
+    
+    for batch_size in batch_sizes: 
+        for epoch in range(1, epochs + 1):
+            train_loss = train(batch_size)
+            print('====> Epoch: %i BATCH SIZE %i TRAINING Loss: %.2e' % (epoch, batch_size, train_loss))
 
-    for epoch in range(1, epochs + 1):
-        train_loss = train()
-        print('====> Epoch: {} TRAINING Loss: {:.2e}'.format(epoch, train_loss))
-
-        scheduler.step(train_loss)
-        if (not stopper.step(train_loss)) or (epoch == epochs):
-            print('Stopping')
-            print('====> Epoch: {} TRAINING Loss: {:.2e}'.format(epoch, train_loss))
-            torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.%ibatches.final.pth' % (name, nbatch)))
-            break 
-        torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.%ibatches.pth' % (name, nbatch)))
+            scheduler.step(train_loss)
+            if (not stopper.step(train_loss)) or (epoch == epochs):
+                print('Stopping')
+                print('====> Epoch: %i BATCH SIZE %i TRAINING Loss: %.2e' % (epoch, batch_size, train_loss))
+                torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.%ibatches.%i_%i.final.pth' % (name, nbatch, nhidden, nhidden2)))
+                break 
+            torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.%ibatches.%i_%i.pth' % (name, nbatch, nhidden, nhidden2)))

@@ -3,43 +3,45 @@
 validate the trained decoder
 
 '''
-import os 
+import os, sys 
 import numpy as np
 import torch
 from torch import nn
 from torch import optim
 from torch.nn import functional as F
+import matplotlib as mpl 
+mpl.use('Agg') 
 import matplotlib.pyplot as plt
 
 #-------------------------------------------------------
 # params 
 #-------------------------------------------------------
-model = sys.argv[1]
+name = sys.argv[1]
 nbatch = int(sys.argv[2]) 
+nhidden = int(sys.argv[3])
+nhidden2 = int(sys.argv[4]) 
 #-------------------------------------------------------
 
 dat_dir = '/tigress/chhahn/provabgs/'
-wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy')) 
+wave    = np.load(os.path.join(dat_dir, 'wave_fsps.npy')) 
+nwave   = len(wave) 
 
 # load in test data 
-theta_test  = np.load(os.path.join(dat_dir, 'fsps.%s.theta.test.npy' % model))
-lnspec_test = np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.test.npy' % model)) 
+theta_test  = np.load(os.path.join(dat_dir, 'fsps.%s.theta.test.npy' % name))
+lnspec_test = np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.test.npy' % name)) 
 
-# average and sigma of ln(spectra)
-mu_lnspec = np.zeros(nwave)
-for i in range(nbatch): 
-    mu_lnspec += np.mean(np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (name, i))), axis=0)/float(nbatch)
+# shift and scale of ln(spectra)
+shift_lnspec = np.load(os.path.join(dat_dir, 'fsps.%s.shift_lnspectrum.%i.npy' % (name, nbatch)))
+scale_lnspec = np.load(os.path.join(dat_dir, 'fsps.%s.scale_lnspectrum.%i.npy' % (name, nbatch)))
+print(shift_lnspec)
+print(scale_lnspec) 
 
-sig_lnspec = np.zeros(nwave) 
-for i in range(nbatch): 
-    sig_lnspec += np.sum((np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (name, i))) - mu_lnspec)**2, axis=0)/float(nbatch)
-sig_lnspec = np.sqrt(sig_lnspec) 
+lnspec_white_test = (lnspec_test - shift_lnspec) / scale_lnspec
 
 n_test      = theta_test.shape[0] 
 n_theta     = theta_test.shape[1]
-n_lnspec    = len(mu_lnspec) 
+n_lnspec    = len(shift_lnspec) 
 
-lnspec_test_white = (lnspec_test - mu_lnspec) / sig_lnspec
 
 class Decoder(nn.Module):
     def __init__(self, nfeat=1000, ncode=5, nhidden=128, nhidden2=35, dropout=0.2):
@@ -67,19 +69,25 @@ class Decoder(nn.Module):
         MSE = torch.sum(0.5 * (y - recon_y).pow(2))
         return MSE
 
-model = torch.load(os.path.join(dat_dir, 'decoder.fsps.%s.%ibatches.pth' % (name, nbatch)))
+model = torch.load(os.path.join(dat_dir, 'decoder.fsps.%s.%ibatches.%i_%i.pth' % (name, nbatch, nhidden, nhidden2)))
 
 lnspec_white_recon = model.forward(torch.tensor(theta_test, dtype=torch.float32))
-lnspec_recon = sig_lnspec * (lnspec_white_recon.detach().numpy() + mu_lnspec)
+lnspec_recon = scale_lnspec * lnspec_white_recon.detach().numpy() + shift_lnspec
+
+print(lnspec_white_test[:5,:5])
+print(lnspec_white_recon.detach().numpy()[:5,:5])
+
+print(lnspec_test[:5,:5])
+print(lnspec_recon[:5,:5])
 
 # plot a handful of SEDs
 fig = plt.figure(figsize=(10,5))
 sub = fig.add_subplot(111)
-for i in np.random.choice(n_test, size=5, replace=False):
-    sub.plot(wave, np.exp(lnspec_recon[i]), c='C%i' % i)
-    sub.plot(wave, np.exp(lnspec_test[i]), c='C%i' % i, ls='--')
+for ii, i in enumerate(np.random.choice(n_test, size=5, replace=False)):
+    sub.plot(wave, np.exp(lnspec_recon[i]), c='C%i' % ii)
+    sub.plot(wave, np.exp(lnspec_test[i]), c='C%i' % ii, ls='--')
 sub.set_xlim(wave.min(), wave.max())
-fig.savefig('fsps.%s.%i.valid_decoder.sed.png' % (model, n_test), bbox_inches='tight') 
+fig.savefig('fsps.%s.%i.%i_%i.valid_decoder.sed.png' % (name, nbatch, nhidden, nhidden2), bbox_inches='tight') 
 
 # plot fractional reconstruction error 
 frac_dspectrum = 1. - np.exp(lnspec_recon - lnspec_test)
@@ -106,4 +114,4 @@ sub.plot(wave, -0.01 * np.ones(len(wave)), c='k', ls='--', lw=0.5)
 sub.set_xlim(wave.min(), wave.max())
 sub.set_ylabel(r'$(f_{\rm emu} - f_{\rm fsps})/f_{\rm fsps}$', fontsize=25) 
 sub.set_ylim(-0.1, 0.1)
-fig.savefig('fsps.%s.%i.valid_decoder.sed.png' % (model, n_test), bbox_inches='tight') 
+fig.savefig('fsps.%s.%i.%i_%i.valid_decoder.png' % (name, nbatch, nhidden, nhidden2), bbox_inches='tight') 
