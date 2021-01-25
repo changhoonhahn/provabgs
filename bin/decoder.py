@@ -130,7 +130,9 @@ ibatch = 0
 for config in range(n_config):
     dropout = 0. #0.9*np.random.uniform()
     dfac = 1./(1.-dropout)
-    nhidden = int(np.ceil(np.exp(np.random.uniform(np.log(dfac*n_theta+1), np.log(dfac*2*n_lnspec)))))
+    #nhidden = int(np.ceil(np.exp(np.random.uniform(np.log(dfac*n_theta+1), np.log(dfac*2*n_lnspec)))))
+    #nhidden2 = int(np.ceil(np.exp(np.random.uniform(np.log(dfac*n_theta+1), np.log(nhidden)))))
+    nhidden = int(np.ceil(np.exp(np.random.uniform(5, np.log(dfac*2*n_lnspec)))))
     nhidden2 = int(np.ceil(np.exp(np.random.uniform(np.log(dfac*n_theta+1), np.log(nhidden)))))
     print('config %i, dropout = %0.2f; 2 hidden layers with %i, %i nodes' % (config, dropout, nhidden, nhidden2))
     model = Decoder(nfeat=n_lnspec, nhidden=nhidden, nhidden2=nhidden2, ncode=n_theta, dropout=dropout)

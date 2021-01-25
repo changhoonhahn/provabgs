@@ -15,7 +15,8 @@ n_pcas = int(sys.argv[3])
 Nlayer = int(sys.argv[4]) 
 Nunits = int(sys.argv[5]) 
 #-------------------------------------------------------
-dat_dir='/scratch/gpfs/chhahn/provabgs/' # hardcoded to tiger directory 
+#dat_dir='/scratch/gpfs/chhahn/provabgs/' # hardcoded to tiger directory 
+dat_dir='/tigress/chhahn/provabgs/'
 wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy')) 
 
 wave_bins = [(wave < 4500), ((wave >= 4500) & (wave < 6500)), (wave >= 6500)]
@@ -36,14 +37,14 @@ PCABasis = SpectrumPCA(
         parameter_selection=None) # pass an optional function that takes in parameter vector(s) and returns True/False for any extra parameter cuts we want to impose on the training sample (eg we may want to restrict the parameter ranges)
 PCABasis._load_from_file(
         os.path.join(dat_dir, 
-            'fsps.%s.seed0_499.w%i.pca%i.hdf5' % (model, i_wave, n_pcas)))
+            'fsps.%s.seed0_999.w%i.pca%i.hdf5' % (model, i_wave, n_pcas)))
 
 #-------------------------------------------------------
 # training theta and pca 
 _training_theta = np.load(os.path.join(dat_dir,
-    'fsps.%s.seed0_499.w%i.pca%i_parameters.npy' % (model, i_wave, n_pcas)))
+    'fsps.%s.seed0_999.w%i.pca%i_parameters.npy' % (model, i_wave, n_pcas)))
 _training_pca = np.load(os.path.join(dat_dir,
-    'fsps.%s.seed0_499.w%i.pca%i_pca.npy' % (model, i_wave, n_pcas)))
+    'fsps.%s.seed0_999.w%i.pca%i_pca.npy' % (model, i_wave, n_pcas)))
 
 training_theta = tf.convert_to_tensor(_training_theta.astype(np.float32))
 training_pca = tf.convert_to_tensor(_training_pca.astype(np.float32))
@@ -77,7 +78,7 @@ patience = 40
 
 # writeout loss 
 _floss = os.path.join(dat_dir, 
-        'fsps.%s.seed0_499.w%i.pca%i.%ix%i.loss.dat' % (model, i_wave, n_pcas, Nlayer, Nunits))
+        'fsps.%s.seed0_999.w%i.pca%i.%ix%i.loss.dat' % (model, i_wave, n_pcas, Nlayer, Nunits))
 floss = open(_floss, 'w')
 floss.close()
 
@@ -127,7 +128,7 @@ for i in range(len(lr)):
         if early_stopping_counter >= patience:
             speculator.update_emulator_parameters()
             speculator.save(os.path.join(dat_dir,
-                '_fsps.%s.seed0_499.w%i.pca%i.%ix%i.log' % 
+                '_fsps.%s.seed0_999.w%i.pca%i.%ix%i.log' % 
                 (model, i_wave, n_pcas, Nlayer, Nunits)))
 
             attributes = list([
@@ -146,7 +147,7 @@ for i in range(len(lr)):
 
             # save attributes to file
             f = open(os.path.join(dat_dir, 
-                'fsps.%s.seed0_499.w%i.pca%i.%ix%i.log.pkl' % 
+                'fsps.%s.seed0_999.w%i.pca%i.%ix%i.log.pkl' % 
                 (model, i_wave, n_pcas, Nlayer, Nunits)), 'wb')
             pickle.dump(attributes, f)
             f.close()
