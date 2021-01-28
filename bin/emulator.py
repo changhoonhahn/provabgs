@@ -10,10 +10,11 @@ from speculator import Speculator
 # params 
 #-------------------------------------------------------
 model = sys.argv[1]
-i_wave = int(sys.argv[2]) 
-n_pcas = int(sys.argv[3]) 
-Nlayer = int(sys.argv[4]) 
-Nunits = int(sys.argv[5]) 
+nbatch = int(sys.argv[2])
+i_wave = int(sys.argv[3]) 
+n_pcas = int(sys.argv[4]) 
+Nlayer = int(sys.argv[5]) 
+Nunits = int(sys.argv[6]) 
 #-------------------------------------------------------
 #dat_dir='/scratch/gpfs/chhahn/provabgs/' # hardcoded to tiger directory 
 dat_dir='/tigress/chhahn/provabgs/'
@@ -42,9 +43,9 @@ PCABasis._load_from_file(
 #-------------------------------------------------------
 # training theta and pca 
 _training_theta = np.load(os.path.join(dat_dir,
-    'fsps.%s.seed0_999.w%i.pca%i_parameters.npy' % (model, i_wave, n_pcas)))
+    'fsps.%s.seed0_999.w%i.pca%i_parameters.npy' % (model, i_wave, n_pcas)))[:nbatch*10000,:]
 _training_pca = np.load(os.path.join(dat_dir,
-    'fsps.%s.seed0_999.w%i.pca%i_pca.npy' % (model, i_wave, n_pcas)))
+    'fsps.%s.seed0_999.w%i.pca%i_pca.npy' % (model, i_wave, n_pcas)))[:nbatch*10000,:]
 
 training_theta = tf.convert_to_tensor(_training_theta.astype(np.float32))
 training_pca = tf.convert_to_tensor(_training_pca.astype(np.float32))
@@ -78,7 +79,7 @@ patience = 40
 
 # writeout loss 
 _floss = os.path.join(dat_dir, 
-        'fsps.%s.seed0_999.w%i.pca%i.%ix%i.loss.dat' % (model, i_wave, n_pcas, Nlayer, Nunits))
+        'fsps.%s.seed0_%i.w%i.pca%i.%ix%i.loss.dat' % (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits))
 floss = open(_floss, 'w')
 floss.close()
 
@@ -128,8 +129,8 @@ for i in range(len(lr)):
         if early_stopping_counter >= patience:
             speculator.update_emulator_parameters()
             speculator.save(os.path.join(dat_dir,
-                '_fsps.%s.seed0_999.w%i.pca%i.%ix%i.log' % 
-                (model, i_wave, n_pcas, Nlayer, Nunits)))
+                '_fsps.%s.seed0_%i.w%i.pca%i.%ix%i.log' % 
+                (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits)))
 
             attributes = list([
                     list(speculator.W_),
@@ -147,8 +148,8 @@ for i in range(len(lr)):
 
             # save attributes to file
             f = open(os.path.join(dat_dir, 
-                'fsps.%s.seed0_999.w%i.pca%i.%ix%i.log.pkl' % 
-                (model, i_wave, n_pcas, Nlayer, Nunits)), 'wb')
+                'fsps.%s.seed0_%i.w%i.pca%i.%ix%i.log.pkl' % 
+                (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits)), 'wb')
             pickle.dump(attributes, f)
             f.close()
             print('Validation loss = %s' % str(best_loss))

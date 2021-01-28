@@ -1,22 +1,28 @@
+'''
 
-import os 
+validate the PCA NN 
+
+'''
+import os, sys 
 import pickle
 import numpy as np
 
 from speculator import SpectrumPCA
 from speculator import Speculator
 
+import matplotlib as mpl 
+mpl.use('Agg') 
 import matplotlib.pyplot as plt
 
-
-#model = 'nmf_bases'
+#-------------------------------------------------------
+# input 
+#-------------------------------------------------------
 model = 'nmfburst'
-
-# number of PCA components 
-n_pcas  = [50, 30, 30]
-
-# architectures
-archs = ['4x256.', '6x256.', '4x256.']
+nbatch = 600 
+n_pcas  = [70, 30, 30] # number of PCA components 
+archs = ['6x256.', '6x256.', '6x256.'] # architectures
+#dat_dir = '/Users/chahah/data/provabgs/'
+dat_dir = '/tigress/chhahn/provabgs/'
 
 # number of parameters
 if model == 'nmf_bases':
@@ -24,7 +30,6 @@ if model == 'nmf_bases':
 elif model == 'nmfburst': 
     n_param = 12 
 
-dat_dir = '/Users/chahah/data/provabgs/'
 
 # read in wavelenght values 
 wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy'))
@@ -35,7 +40,7 @@ wave_bins = [(wave < 4500), (wave >= 4500) & (wave < 6500), (wave >= 6500)]
 # plot loss 
 losses = [
         np.loadtxt(os.path.join(dat_dir,
-            'fsps.%s.seed0_499.w%i.pca%i.%sloss.dat' % (model, i, n_pcas[i],
+            'fsps.%s.seed0_%i.w%i.pca%i.%sloss.dat' % (model, nbatch-1, i, n_pcas[i],
                 archs[i]))) for i in range(3)
             ]
 
@@ -49,7 +54,7 @@ sub.set_ylabel('loss', fontsize=25)
 sub.set_yscale('log')
 sub.set_xlabel('Epochs', fontsize=25)
 sub.set_xlim(0, loss.shape[0])
-fig.savefig('fsps.%s.%svalid_emu.loss.png' % (model, ''.join(archs)), bbox_inches='tight') 
+fig.savefig('fsps.%s.%s.%svalid_emu.loss.png' % (model, '_'.join(str(nn) for nn in n_pcas), ''.join(archs)), bbox_inches='tight') 
 
 
 # read in test parameters and data
@@ -68,7 +73,7 @@ lnspec_test = np.concatenate(lnspec_test, axis=1)
 emus = [
         Speculator(
             restore=True, 
-            restore_filename=os.path.join(dat_dir, '_fsps.%s.seed0_499.w%i.pca%i.%slog'% (model, i, n_pcas[i], archs[i]))
+            restore_filename=os.path.join(dat_dir, '_fsps.%s.seed0_%i.w%i.pca%i.%slog'% (model, nbatch-1, i, n_pcas[i], archs[i]))
             )
         for i in range(3)
         ]
@@ -115,7 +120,7 @@ for iwave in range(3):
     if iwave == 0: sub.set_ylabel(r'$(f_{\rm emu} - f_{\rm fsps})/f_{\rm fsps}$', fontsize=25) 
     sub.set_ylim(-0.03, 0.03) 
     if iwave != 0 : sub.set_yticklabels([])
-fig.savefig('fsps.%s.%svalid_emu.png' % (model, ''.join(archs)), bbox_inches='tight') 
+fig.savefig('fsps.%s.%s.%svalid_emu.png' % (model, '_'.join(str(nn) for nn in n_pcas), ''.join(archs)), bbox_inches='tight') 
 
 # plot cumulative fractional error
 mean_frac_dspectrum = np.mean(np.abs(1. - np.exp(lnspec_recon - lnspec_test)), axis=1)
@@ -130,4 +135,4 @@ sub.set_xlabel(r'${\rm mean}_\lambda \langle (f_{\rm emu}  - f_{\rm fsps}) / f_{
 sub.set_xlim(0., 0.03)
 sub.set_ylabel('cumulative distribution', fontsize=20)
 sub.set_ylim(0., 1.)
-fig.savefig('fsps.%s.%svalid_emu.cum.png' % (model, ''.join(archs)), bbox_inches='tight') 
+fig.savefig('fsps.%s.%s.%svalid_emu.cum.png' % (model, '_'.join(str(nn) for nn in n_pcas), ''.join(archs)), bbox_inches='tight') 
