@@ -16,7 +16,7 @@ def deploy_decoder_train(model, nbatch):
         "#SBATCH --ntasks-per-node=1",
         '#SBATCH --gres=gpu:1', 
         "#SBATCH --partition=general",
-        "#SBATCH --time=23:59:59", 
+        "#SBATCH --time=47:59:59", 
         "#SBATCH --export=ALL",
         "#SBATCH --output=ofiles/train_decoder_%s%i.o" % (model, nbatch),
         "#SBATCH --mail-type=begin", 

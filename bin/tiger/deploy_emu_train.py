@@ -7,11 +7,11 @@ import os, sys
 
 
 
-def deploy_emu_train(model, i_wave, n_pcas, Nlayer, Nunits):
+def deploy_emu_train(model, nbatch, i_wave, n_pcas, Nlayer, Nunits):
     ''' create slurm script for training speculator and then submit 
     '''
     cntnt = '\n'.join(["#!/bin/bash", 
-        "#SBATCH -J train_emu_%s_%i_%i_%ix%i" % (model, i_wave, n_pcas, Nlayer, Nunits),  
+        "#SBATCH -J train_emu_%s_%i_%i_%i_%ix%i" % (model, nbatch, i_wave, n_pcas, Nlayer, Nunits),  
         "#SBATCH --exclusive",
         "#SBATCH --nodes=1",
         "#SBATCH --ntasks-per-node=1",
@@ -19,7 +19,7 @@ def deploy_emu_train(model, i_wave, n_pcas, Nlayer, Nunits):
         "#SBATCH --partition=general",
         "#SBATCH --time=47:59:59", 
         "#SBATCH --export=ALL",
-        "#SBATCH --output=ofiles/train_emu_%s_%i_%i_%ix%i.o" % (model, i_wave, n_pcas, Nlayer, Nunits),  
+        "#SBATCH --output=ofiles/train_emu_%s_%i_%i_%i_%ix%i.o" % (model, nbatch, i_wave, n_pcas, Nlayer, Nunits),  
         "#SBATCH --mail-type=all",
         "#SBATCH --mail-user=chhahn@princeton.edu",
         "", 
@@ -29,7 +29,7 @@ def deploy_emu_train(model, i_wave, n_pcas, Nlayer, Nunits):
         "module load anaconda3", 
         "conda activate tf2-gpu", 
         "",
-        "python /home/chhahn/projects/provabgs/bin/emulator.py %s %i %i %i %i" % (model, i_wave, n_pcas, Nlayer, Nunits),
+        "python /home/chhahn/projects/provabgs/bin/emulator.py %s %i %i %i %i %i" % (model, nbatch, i_wave, n_pcas, Nlayer, Nunits),
         'now=$(date +"%T")', 
         'echo "end time ... $now"', 
         ""]) 
@@ -43,8 +43,9 @@ def deploy_emu_train(model, i_wave, n_pcas, Nlayer, Nunits):
     return None 
 
 model = sys.argv[1]
-i_wave = int(sys.argv[2]) 
-n_pcas = int(sys.argv[3]) 
-Nlayer = int(sys.argv[4]) 
-Nunits = int(sys.argv[5]) 
-deploy_emu_train(model, i_wave, n_pcas,  Nlayer, Nunits)
+nbatch = int(sys.argv[2])
+i_wave = int(sys.argv[3]) 
+n_pcas = int(sys.argv[4]) 
+Nlayer = int(sys.argv[5]) 
+Nunits = int(sys.argv[6]) 
+deploy_emu_train(model, nbatch, i_wave, n_pcas,  Nlayer, Nunits)
