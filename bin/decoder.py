@@ -15,28 +15,31 @@ from torch.nn import functional as F
 # params 
 #-------------------------------------------------------
 name = sys.argv[1]
-nbatch = int(sys.argv[2]) 
+i_wave = int(sys.argv[2])
+nbatch = int(sys.argv[3]) 
 #-------------------------------------------------------
 
 # load in training set  
 dat_dir = '/tigress/chhahn/provabgs/'
-nwave = len(np.load(os.path.join(dat_dir, 'wave_fsps.npy')))
+wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy'))
+wave_bin = [(wave < 4500), ((wave >= 4500) & (wave < 6500)), (wave >= 6500)][i_wave]
+nwave = len(wave[wave_bin])
 
 # average and sigma of ln(spectra)
-fshift = os.path.join(dat_dir, 'fsps.%s.shift_lnspectrum.%i.npy' % (name, nbatch))
+fshift = os.path.join(dat_dir, 'fsps.%s.w%i.shift_lnspectrum.%i.npy' % (name, i_wave, nbatch))
 if not os.path.isfile(fshift): 
     shift_lnspec = np.zeros(nwave)
     for i in range(nbatch): 
-        shift_lnspec += np.mean(np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (name, i))), axis=0)/float(nbatch)
+        shift_lnspec += np.mean(np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (name, i))), axis=0)[wave_bin]/float(nbatch)
     np.save(fshift, shift_lnspec)
 else: 
     shift_lnspec = np.load(fshift) 
 
-fscale = os.path.join(dat_dir, 'fsps.%s.scale_lnspectrum.%i.npy' % (name, nbatch))
+fscale = os.path.join(dat_dir, 'fsps.%s.w%i.scale_lnspectrum.%i.npy' % (name, i_wave, nbatch))
 if not os.path.isfile(fscale): 
     scale_lnspec = np.zeros(nwave) 
     for i in range(nbatch): 
-        scale_lnspec += np.std(np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (name, i))), axis=0)/float(nbatch)
+        scale_lnspec += np.std(np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.seed%i.npy' % (name, i))), axis=0)[wave_bin]/float(nbatch)
     np.save(fscale, scale_lnspec)
 else: 
     scale_lnspec = np.load(fscale) 
@@ -51,19 +54,22 @@ print('n_lnspec = %i' % n_lnspec)
 
 
 class Decoder(nn.Module):
-    def __init__(self, nfeat=1000, ncode=5, nhidden=128, nhidden2=35, dropout=0.2):
+    def __init__(self, nfeat=1000, ncode=5, nhidden=128, nhidden2=35, nhidden3=35, dropout=0.2):
         super(Decoder, self).__init__()
 
         self.ncode = int(ncode)
 
-        self.decd = nn.Linear(ncode, nhidden2)
+        self.dec0 = nn.Linear(ncode, nhidden3)
+        self.d2 = nn.Dropout(p=dropout)
+        self.dec1 = nn.Linear(nhidden3, nhidden2)
         self.d3 = nn.Dropout(p=dropout)
         self.dec2 = nn.Linear(nhidden2, nhidden)
         self.d4 = nn.Dropout(p=dropout)
         self.outp = nn.Linear(nhidden, nfeat)
 
     def decode(self, x):
-        x = self.d3(F.leaky_relu(self.decd(x)))
+        x = self.d2(F.leaky_relu(self.dec0(x)))
+        x = self.d3(F.leaky_relu(self.dec1(x)))
         x = self.d4(F.leaky_relu(self.dec2(x)))
         x = self.outp(x)
         return x
@@ -87,7 +93,7 @@ def train(batch_size): #model, optimizer, epoch, min_valid_loss, badepochs
             'fsps.%s.theta.seed%i.npy' % (name, i))), 
             dtype=torch.float32)
         lns = torch.tensor((np.load(os.path.join(dat_dir, 
-            'fsps.%s.lnspectrum.seed%i.npy' % (name, i))) -
+            'fsps.%s.lnspectrum.seed%i.npy' % (name, i)))[:,wave_bin] -
             shift_lnspec)/scale_lnspec, dtype=torch.float32)
 
         train_loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(tt, lns),
@@ -132,10 +138,12 @@ for config in range(n_config):
     dfac = 1./(1.-dropout)
     #nhidden = int(np.ceil(np.exp(np.random.uniform(np.log(dfac*n_theta+1), np.log(dfac*2*n_lnspec)))))
     #nhidden2 = int(np.ceil(np.exp(np.random.uniform(np.log(dfac*n_theta+1), np.log(nhidden)))))
-    nhidden = int(np.ceil(np.exp(np.random.uniform(5, np.log(dfac*2*n_lnspec)))))
-    nhidden2 = int(np.ceil(np.exp(np.random.uniform(np.log(dfac*n_theta+1), np.log(nhidden)))))
-    print('config %i, dropout = %0.2f; 2 hidden layers with %i, %i nodes' % (config, dropout, nhidden, nhidden2))
-    model = Decoder(nfeat=n_lnspec, nhidden=nhidden, nhidden2=nhidden2, ncode=n_theta, dropout=dropout)
+
+    nhidden = int(np.ceil(np.exp(np.random.uniform(6, np.log(dfac*2*n_lnspec)))))
+    nhidden2 = int(np.ceil(np.exp(np.random.uniform(4.6, np.log(nhidden)))))
+    nhidden3 = int(np.ceil(np.exp(np.random.uniform(np.log(dfac*n_theta+1), np.log(nhidden2)))))
+    print('config %i, dropout = %0.2f; 2 hidden layers with %i, %i, %i nodes' % (config, dropout, nhidden, nhidden2, nhidden3))
+    model = Decoder(nfeat=n_lnspec, nhidden=nhidden, nhidden2=nhidden2, nhidden3=nhidden3, ncode=n_theta, dropout=dropout)
     
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=5)
@@ -150,6 +158,6 @@ for config in range(n_config):
             if (not stopper.step(train_loss)) or (epoch == epochs):
                 print('Stopping')
                 print('====> Epoch: %i BATCH SIZE %i TRAINING Loss: %.2e' % (epoch, batch_size, train_loss))
-                torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.%ibatches.%i_%i.final.pth' % (name, nbatch, nhidden, nhidden2)))
+                torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.w%i.%ibatches.%i_%i_%i.final.pth' % (name, i_wave, nbatch, nhidden, nhidden2, nhidden3)))
                 break 
-            torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.%ibatches.%i_%i.pth' % (name, nbatch, nhidden, nhidden2)))
+            torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.w%i.%ibatches.%i_%i_%i.pth' % (name, i_wave, nbatch, nhidden, nhidden2, nhidden3)))

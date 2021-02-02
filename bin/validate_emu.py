@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 #-------------------------------------------------------
 model = 'nmfburst'
 nbatch = 600 
-n_pcas  = [70, 30, 30] # number of PCA components 
+n_pcas  = [60, 30, 30] # number of PCA components 
 archs = ['6x256.', '6x256.', '6x256.'] # architectures
 #dat_dir = '/Users/chahah/data/provabgs/'
 dat_dir = '/tigress/chhahn/provabgs/'
