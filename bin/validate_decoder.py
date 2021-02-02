@@ -5,6 +5,7 @@ validate the trained decoder
 '''
 import os, sys 
 import numpy as np
+from datetime import date
 import torch
 from torch import nn
 from torch import optim
@@ -16,47 +17,35 @@ import matplotlib.pyplot as plt
 #-------------------------------------------------------
 # params 
 #-------------------------------------------------------
-name = sys.argv[1]
-nbatch = int(sys.argv[2]) 
-nhidden = int(sys.argv[3])
-nhidden2 = int(sys.argv[4]) 
+name        = 'nmfburst'
+nbatch      = 500
+nhidden     = [1129, 594, 1797]
+nhidden2    = [175, 178, 1408]
+nhidden3    = [107, 31, 325]
 #-------------------------------------------------------
 
 dat_dir = '/tigress/chhahn/provabgs/'
 wave    = np.load(os.path.join(dat_dir, 'wave_fsps.npy')) 
 nwave   = len(wave) 
 
-# load in test data 
-theta_test  = np.load(os.path.join(dat_dir, 'fsps.%s.theta.test.npy' % name))
-lnspec_test = np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.test.npy' % name)) 
-
-# shift and scale of ln(spectra)
-shift_lnspec = np.load(os.path.join(dat_dir, 'fsps.%s.shift_lnspectrum.%i.npy' % (name, nbatch)))
-scale_lnspec = np.load(os.path.join(dat_dir, 'fsps.%s.scale_lnspectrum.%i.npy' % (name, nbatch)))
-print(shift_lnspec)
-print(scale_lnspec) 
-
-lnspec_white_test = (lnspec_test - shift_lnspec) / scale_lnspec
-
-n_test      = theta_test.shape[0] 
-n_theta     = theta_test.shape[1]
-n_lnspec    = len(shift_lnspec) 
-
 
 class Decoder(nn.Module):
-    def __init__(self, nfeat=1000, ncode=5, nhidden=128, nhidden2=35, dropout=0.2):
+    def __init__(self, nfeat=1000, ncode=5, nhidden=128, nhidden2=35, nhidden3=35, dropout=0.2):
         super(Decoder, self).__init__()
 
         self.ncode = int(ncode)
 
-        self.decd = nn.Linear(ncode, nhidden2)
+        self.dec0 = nn.Linear(ncode, nhidden3)
+        self.d2 = nn.Dropout(p=dropout)
+        self.dec1 = nn.Linear(nhidden3, nhidden2)
         self.d3 = nn.Dropout(p=dropout)
         self.dec2 = nn.Linear(nhidden2, nhidden)
         self.d4 = nn.Dropout(p=dropout)
         self.outp = nn.Linear(nhidden, nfeat)
 
     def decode(self, x):
-        x = self.d3(F.leaky_relu(self.decd(x)))
+        x = self.d2(F.leaky_relu(self.dec0(x)))
+        x = self.d3(F.leaky_relu(self.dec1(x)))
         x = self.d4(F.leaky_relu(self.dec2(x)))
         x = self.outp(x)
         return x
@@ -69,13 +58,37 @@ class Decoder(nn.Module):
         MSE = torch.sum(0.5 * (y - recon_y).pow(2))
         return MSE
 
-model = torch.load(os.path.join(dat_dir, 'decoder.fsps.%s.%ibatches.%i_%i.pth' % (name, nbatch, nhidden, nhidden2)))
 
-lnspec_white_recon = model.forward(torch.tensor(theta_test, dtype=torch.float32))
-lnspec_recon = scale_lnspec * lnspec_white_recon.detach().numpy() + shift_lnspec
+# load in test data 
+theta_test  = np.load(os.path.join(dat_dir, 'fsps.%s.theta.test.npy' % name))
+lnspec_test = np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.test.npy' % name)) 
 
-print(lnspec_white_test[:5,:5])
-print(lnspec_white_recon.detach().numpy()[:5,:5])
+
+lnspec_recon = [] 
+for iw in range(3): # wave bins 
+    wave_bin = [(wave < 4500), ((wave >= 4500) & (wave < 6500)), (wave >= 6500)][iw]
+
+    # shift and scale of ln(spectra)
+    shift_lnspec = np.load(os.path.join(dat_dir, 'fsps.%s.w%i.shift_lnspectrum.%i.npy' % (name, iw, nbatch)))
+    scale_lnspec = np.load(os.path.join(dat_dir, 'fsps.%s.w%i.scale_lnspectrum.%i.npy' % (name, iw, nbatch)))
+
+    lnspec_white_test = (lnspec_test[:,wave_bin] - shift_lnspec) / scale_lnspec
+
+    n_test      = theta_test.shape[0] 
+    n_theta     = theta_test.shape[1]
+    n_lnspec    = len(shift_lnspec) 
+
+
+    model = torch.load(os.path.join(dat_dir, 'decoder.fsps.%s.w%i.%ibatches.%i_%i_%i.pth' % (name, iw, nbatch, nhidden[iw], nhidden2[iw], nhidden3[iw])))
+
+    lnspec_white_recon_iw = model.forward(torch.tensor(theta_test, dtype=torch.float32))
+    lnspec_recon_iw = scale_lnspec * lnspec_white_recon_iw.detach().numpy() + shift_lnspec
+    lnspec_recon.append(lnspec_recon_iw) 
+
+    print(lnspec_white_test[:5,:5])
+    print(lnspec_white_recon_iw.detach().numpy()[:5,:5])
+
+lnspec_recon = np.concatenate(lnspec_recon, axis=1)
 
 print(lnspec_test[:5,:5])
 print(lnspec_recon[:5,:5])
@@ -87,7 +100,8 @@ for ii, i in enumerate(np.random.choice(n_test, size=5, replace=False)):
     sub.plot(wave, np.exp(lnspec_recon[i]), c='C%i' % ii)
     sub.plot(wave, np.exp(lnspec_test[i]), c='C%i' % ii, ls='--')
 sub.set_xlim(wave.min(), wave.max())
-fig.savefig('fsps.%s.%i.%i_%i.valid_decoder.sed.png' % (name, nbatch, nhidden, nhidden2), bbox_inches='tight') 
+
+fig.savefig('fsps.%s.%i.%s.valid_decoder.sed.png' % (name, nbatch, str(date.today().isoformat())), bbox_inches='tight') 
 
 # plot fractional reconstruction error 
 frac_dspectrum = 1. - np.exp(lnspec_recon - lnspec_test)
@@ -114,4 +128,4 @@ sub.plot(wave, -0.01 * np.ones(len(wave)), c='k', ls='--', lw=0.5)
 sub.set_xlim(wave.min(), wave.max())
 sub.set_ylabel(r'$(f_{\rm emu} - f_{\rm fsps})/f_{\rm fsps}$', fontsize=25) 
 sub.set_ylim(-0.1, 0.1)
-fig.savefig('fsps.%s.%i.%i_%i.valid_decoder.png' % (name, nbatch, nhidden, nhidden2), bbox_inches='tight') 
+fig.savefig('fsps.%s.%i.%s.valid_decoder.png' % (name, nbatch, str(date.today().isoformat())), bbox_inches='tight') 
