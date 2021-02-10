@@ -18,6 +18,11 @@ name = sys.argv[1]
 i_wave = int(sys.argv[2])
 nbatch = int(sys.argv[3]) 
 #-------------------------------------------------------
+nhidden0 = 1280 
+nhidden1 = 1024
+nhidden2 = 512
+nhidden3 = 256 
+nhidden4 = 64 
 
 # load in training set  
 dat_dir = '/tigress/chhahn/provabgs/'
@@ -54,23 +59,29 @@ print('n_lnspec = %i' % n_lnspec)
 
 
 class Decoder(nn.Module):
-    def __init__(self, nfeat=1000, ncode=5, nhidden=128, nhidden2=35, nhidden3=35, dropout=0.2):
+    def __init__(self, nfeat=1000, ncode=5, nhidden0=128, nhidden1=128, nhidden2=35, nhidden3=35, nhidden4=35, dropout=0.2):
         super(Decoder, self).__init__()
 
         self.ncode = int(ncode)
 
-        self.dec0 = nn.Linear(ncode, nhidden3)
+        self.dec0 = nn.Linear(ncode, nhidden4)
+        self.d1 = nn.Dropout(p=dropout)
+        self.dec1 = nn.Linear(nhidden4, nhidden3)
         self.d2 = nn.Dropout(p=dropout)
-        self.dec1 = nn.Linear(nhidden3, nhidden2)
+        self.dec2 = nn.Linear(nhidden3, nhidden2)
         self.d3 = nn.Dropout(p=dropout)
-        self.dec2 = nn.Linear(nhidden2, nhidden)
+        self.dec3 = nn.Linear(nhidden2, nhidden1)
         self.d4 = nn.Dropout(p=dropout)
-        self.outp = nn.Linear(nhidden, nfeat)
+        self.dec4 = nn.Linear(nhidden1, nhidden0)
+        self.d5 = nn.Dropout(p=dropout)
+        self.outp = nn.Linear(nhidden0, nfeat)
 
     def decode(self, x):
-        x = self.d2(F.leaky_relu(self.dec0(x)))
-        x = self.d3(F.leaky_relu(self.dec1(x)))
-        x = self.d4(F.leaky_relu(self.dec2(x)))
+        x = self.d1(F.leaky_relu(self.dec0(x)))
+        x = self.d2(F.leaky_relu(self.dec1(x)))
+        x = self.d3(F.leaky_relu(self.dec2(x)))
+        x = self.d4(F.leaky_relu(self.dec3(x)))
+        x = self.d5(F.leaky_relu(self.dec4(x)))
         x = self.outp(x)
         return x
 
@@ -128,6 +139,13 @@ class EarlyStopper:
         return not (self.badepochs == self.patience)
 
 
+# output loss
+_floss = os.path.join(dat_dir, 
+    'decoder.fsps.%s.w%i.%ibatches.%i_%i_%i_%i_%i.loss' %
+    (name, i_wave, nbatch, nhidden0, nhidden1,  nhidden2, nhidden3, nhidden4))
+floss = open(_floss, 'w')
+floss.close()
+
 epochs = 200
 n_config = 1
 batch_sizes = [100, 1000, 5000, 10000]
@@ -135,15 +153,9 @@ ibatch = 0
 
 for config in range(n_config):
     dropout = 0. #0.9*np.random.uniform()
-    dfac = 1./(1.-dropout)
-    #nhidden = int(np.ceil(np.exp(np.random.uniform(np.log(dfac*n_theta+1), np.log(dfac*2*n_lnspec)))))
-    #nhidden2 = int(np.ceil(np.exp(np.random.uniform(np.log(dfac*n_theta+1), np.log(nhidden)))))
 
-    nhidden = int(np.ceil(np.exp(np.random.uniform(6, np.log(dfac*2*n_lnspec)))))
-    nhidden2 = int(np.ceil(np.exp(np.random.uniform(4.6, np.log(nhidden)))))
-    nhidden3 = int(np.ceil(np.exp(np.random.uniform(np.log(dfac*n_theta+1), np.log(nhidden2)))))
-    print('config %i, dropout = %0.2f; 2 hidden layers with %i, %i, %i nodes' % (config, dropout, nhidden, nhidden2, nhidden3))
-    model = Decoder(nfeat=n_lnspec, nhidden=nhidden, nhidden2=nhidden2, nhidden3=nhidden3, ncode=n_theta, dropout=dropout)
+    print('config %i, dropout = %0.2f; 5 hidden layers with %i, %i, %i, %i, %i nodes' % (config, dropout, nhidden0, nhidden1, nhidden2, nhidden3, nhidden4))
+    model = Decoder(nfeat=n_lnspec, nhidden0=nhidden0, nhidden1=nhidden1, nhidden2=nhidden2, nhidden3=nhidden3, nhidden4=nhidden4, ncode=n_theta, dropout=dropout)
     
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True, patience=5)
@@ -153,11 +165,14 @@ for config in range(n_config):
         for epoch in range(1, epochs + 1):
             train_loss = train(batch_size)
             print('====> Epoch: %i BATCH SIZE %i TRAINING Loss: %.2e' % (epoch, batch_size, train_loss))
+            floss = open(_floss, "a") # append
+            floss.write('%i \t %i \t %.5e \n' % (batch_size, epoch, train_loss))
+            floss.close()
 
             scheduler.step(train_loss)
             if (not stopper.step(train_loss)) or (epoch == epochs):
                 print('Stopping')
                 print('====> Epoch: %i BATCH SIZE %i TRAINING Loss: %.2e' % (epoch, batch_size, train_loss))
-                torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.w%i.%ibatches.%i_%i_%i.final.pth' % (name, i_wave, nbatch, nhidden, nhidden2, nhidden3)))
+                torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.w%i.%ibatches.%i_%i_%i_%i_%i.final.pth' % (name, i_wave, nbatch, nhidden0, nhidden1,  nhidden2, nhidden3, nhidden4)))
                 break 
-            torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.w%i.%ibatches.%i_%i_%i.pth' % (name, i_wave, nbatch, nhidden, nhidden2, nhidden3)))
+            torch.save(model, os.path.join(dat_dir, 'decoder.fsps.%s.w%i.%ibatches.%i_%i_%i_%i_%i.pth' % (name, i_wave, nbatch, nhidden0, nhidden1,  nhidden2, nhidden3, nhidden4)))
