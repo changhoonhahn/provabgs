@@ -133,3 +133,17 @@ sub.set_xlim(wave.min(), wave.max())
 sub.set_ylabel(r'$(f_{\rm emu} - f_{\rm fsps})/f_{\rm fsps}$', fontsize=25) 
 sub.set_ylim(-0.03, 0.03)
 fig.savefig('fsps.%s.%i.%s.valid_decoder.png' % (name, nbatch, str(date.today().isoformat())), bbox_inches='tight') 
+
+# plot CDF of fractional reconstruction error
+mean_frac_dspectrum = np.mean(np.abs(1. - np.exp(lnspec_recon - lnspec_test)), axis=1)
+quant = np.quantile(mean_frac_dspectrum, [0.68, 0.95, 0.99, 0.999])
+fig = plt.figure(figsize=(8,6))
+sub = fig.add_subplot(111)
+for q, a in zip(quant[::-1], [0.1, 0.2, 0.3, 0.5]): 
+    sub.fill_between([0., q], [0., 0.], [1., 1.], alpha=a, color='C0')
+_ = sub.hist(mean_frac_dspectrum, 40, density=True, histtype='step', cumulative=True, color='k')
+sub.set_xlabel(r'${\rm mean}_\lambda \langle (f_{\rm speculator}  - f_{\rm fsps}) / f_{\rm fsps} \rangle$', fontsize=20)
+sub.set_xlim(0., 0.03)
+sub.set_ylabel('cumulative distribution', fontsize=20)
+sub.set_ylim(0., 1.)
+fig.savefig('fsps.%s.%i.%s.valid_decoder.cdf.png' % (name, nbatch, str(date.today().isoformat())), bbox_inches='tight') 
