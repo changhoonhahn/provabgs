@@ -115,16 +115,17 @@ for i in range(len(lr)):
     while early_stopping_counter < patience:
 
         # loop over batches
-        train_loss = 0 
+        train_loss, nb = 0, 0
         for theta, pca in training_data:
 
             # training step: check whether to accumulate gradients or not (only worth doing this for very large batch sizes)
             train_loss += speculator.training_step(theta, pca)
+            nb += 1 
             #if gradient_accumulation_steps[i] == 1:
             #    loss = speculator.training_step(theta, pca)
             #else:
             #    loss = speculator.training_step_with_accumulated_gradients(theta, pca, accumulation_steps=gradient_accumulation_steps[i])
-        train_loss /= float(len(training_data))
+        train_loss /= float(nb)
         validation_loss.append(train_loss)
 
         # compute validation loss at the end of the epoch
