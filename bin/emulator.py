@@ -78,12 +78,15 @@ speculator = Speculator(
 # train speculator
 
 # cooling schedule
-lr = [1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6]
-batch_size = [1000, 5000, 10000, 50000, 1000000, int(training_theta.shape[0])]
-gradient_accumulation_steps = [1, 1, 1, 1, 10, 10] # split the largest batch size into 10 when computing gradients to avoid memory overflow
+lr = [1e-3, 2e-3, 5e-4, 1e-5, 1e-6]
+batch_size = 1000
+
+#lr = [1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6]
+#batch_size = [1000, 5000, 10000, 50000, 1000000, int(training_theta.shape[0])]
+#gradient_accumulation_steps = [1, 1, 1, 1, 10, 10] # split the largest batch size into 10 when computing gradients to avoid memory overflow
 
 # early stopping set up
-patience = 40
+patience = 10
 
 # writeout loss 
 _floss = os.path.join(dat_dir, 
@@ -94,13 +97,14 @@ floss.close()
 
 # train using cooling/heating schedule for lr/batch-size
 for i in range(len(lr)):
-    print('learning rate = ' + str(lr[i]) + ', batch size = ' + str(batch_size[i]))
+    print('learning rate = ' + str(lr[i]))# + ', batch size = ' + str(batch_size[i]))
     # set learning rate
     speculator.optimizer.lr = lr[i]
 
     n_training = training_theta.shape[0]
     # create iterable dataset (given batch size)
-    training_data = tf.data.Dataset.from_tensor_slices((training_theta, training_pca)).shuffle(n_training).batch(batch_size[i])
+    training_data = tf.data.Dataset.from_tensor_slices((training_theta, training_pca)).shuffle(n_training).batch(batch_size)
+    #training_data = tf.data.Dataset.from_tensor_slices((training_theta, training_pca)).shuffle(n_training).batch(batch_size[i])
 
     # set up training loss
     validation_loss = [np.infty]
@@ -111,20 +115,24 @@ for i in range(len(lr)):
     while early_stopping_counter < patience:
 
         # loop over batches
+        train_loss = 0 
         for theta, pca in training_data:
 
             # training step: check whether to accumulate gradients or not (only worth doing this for very large batch sizes)
-            if gradient_accumulation_steps[i] == 1:
-                loss = speculator.training_step(theta, pca)
-            else:
-                loss = speculator.training_step_with_accumulated_gradients(theta, pca, accumulation_steps=gradient_accumulation_steps[i])
+            train_loss += speculator.training_step(theta, pca)
+            #if gradient_accumulation_steps[i] == 1:
+            #    loss = speculator.training_step(theta, pca)
+            #else:
+            #    loss = speculator.training_step_with_accumulated_gradients(theta, pca, accumulation_steps=gradient_accumulation_steps[i])
+        train_loss /= float(len(training_data))
+        validation_loss.append(train_loss)
 
         # compute validation loss at the end of the epoch
-        _loss = speculator.compute_loss(training_theta, training_pca).numpy()
-        validation_loss.append(_loss)
+        #_loss = speculator.compute_loss(training_theta, training_pca).numpy()
+        #validation_loss.append(_loss)
     
         floss = open(_floss, "a") # append
-        floss.write('%i \t %f \t %f \n' % (batch_size[i], lr[i], _loss))
+        floss.write('%i \t %f \t %f \n' % (batch_size, lr[i], _loss))
         floss.close()
 
         # early stopping condition
