@@ -50,15 +50,22 @@ PCABasis._load_from_file(
 
 #-------------------------------------------------------
 # training theta and pca 
-_training_theta = np.load(os.path.join(dat_dir,
+_theta_train = np.load(os.path.join(dat_dir,
     'fsps.%s.seed0_%i.6w%i.pca%i_parameters.npy' % (model, nbatch-1, i_wave, n_pcas)))
-_training_pca = np.load(os.path.join(dat_dir,
+_pca_train = np.load(os.path.join(dat_dir,
     'fsps.%s.seed0_%i.6w%i.pca%i_pca.npy' % (model, nbatch-1, i_wave, n_pcas)))
 
-training_theta = tf.convert_to_tensor(_training_theta.astype(np.float32))
-training_pca = tf.convert_to_tensor(_training_pca.astype(np.float32))
+theta_train = tf.convert_to_tensor(_theta_train.astype(np.float32))
+pca_train = tf.convert_to_tensor(_pca_train.astype(np.float32))
 
+# validation theta and pca
+theta_valid = np.load(os.path.join(dat_dir, 'fsps.nmfburst.theta.test.npy')).astype(np.float32)
+lnspec_valid = np.load(os.path.join(dat_dir, 'fsps.nmfburst.lnspectrum.test.npy'))[:, wave_bins[i_wave]]
 
+# get pca for wavebin 
+pca_valid = tf.convert_to_tensor(PCABasis.PCA.transform((lnspec_valid - PCABasis.spectrum_shift)/PCABasis.spectrum_scale).astype(np.float32))
+
+#-------------------------------------------------------
 # train Speculator
 speculator = Speculator(
         n_parameters=n_param, # number of model parameters
@@ -74,16 +81,10 @@ speculator = Speculator(
         restore=False,
         optimizer=tf.keras.optimizers.Adam()) # optimizer for model training
 
-#-------------------------------------------------------
-# train speculator
-
 # cooling schedule
-lr = [1e-3, 2e-3, 5e-4, 1e-5, 1e-6]
-batch_size = 1000
-
-#lr = [1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6]
-#batch_size = [1000, 5000, 10000, 50000, 1000000, int(training_theta.shape[0])]
-#gradient_accumulation_steps = [1, 1, 1, 1, 10, 10] # split the largest batch size into 10 when computing gradients to avoid memory overflow
+lr = [1e-3, 2e-4, 5e-5, 1e-5, 1e-6] # [1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6]
+batch_size = [1000, 5000, 10000, 50000, 1000000]#, int(training_theta.shape[0])]
+gradient_accumulation_steps = [1, 1, 1, 1, 10]#, 10] # split the largest batch size into 10 when computing gradients to avoid memory overflow
 
 # early stopping set up
 patience = 10
@@ -97,16 +98,16 @@ floss.close()
 
 # train using cooling/heating schedule for lr/batch-size
 for i in range(len(lr)):
-    print('learning rate = ' + str(lr[i]))# + ', batch size = ' + str(batch_size[i]))
+    print('learning rate = ' + str(lr[i]) + ', batch size = ' + str(batch_size[i]))
+
     # set learning rate
     speculator.optimizer.lr = lr[i]
 
-    n_training = training_theta.shape[0]
     # create iterable dataset (given batch size)
-    training_data = tf.data.Dataset.from_tensor_slices((training_theta, training_pca)).shuffle(n_training).batch(batch_size)
-    #training_data = tf.data.Dataset.from_tensor_slices((training_theta, training_pca)).shuffle(n_training).batch(batch_size[i])
+    training_data = tf.data.Dataset.from_tensor_slices((theta_train, pca_train)).shuffle(theta_train.shape[0]).batch(batch_size[i])
 
     # set up training loss
+    training_loss   = [np.infty]
     validation_loss = [np.infty]
     best_loss       = np.infty
     early_stopping_counter = 0
@@ -117,23 +118,20 @@ for i in range(len(lr)):
         # loop over batches
         train_loss, nb = 0, 0
         for theta, pca in training_data:
-
             # training step: check whether to accumulate gradients or not (only worth doing this for very large batch sizes)
-            train_loss += speculator.training_step(theta, pca)
+            if gradient_accumulation_steps[i] == 1:
+                train_loss += speculator.training_step(theta, pca)
+            else:
+                train_loss += speculator.training_step_with_accumulated_gradients(theta, pca, accumulation_steps=gradient_accumulation_steps[i])
             nb += 1 
-            #if gradient_accumulation_steps[i] == 1:
-            #    loss = speculator.training_step(theta, pca)
-            #else:
-            #    loss = speculator.training_step_with_accumulated_gradients(theta, pca, accumulation_steps=gradient_accumulation_steps[i])
         train_loss /= float(nb)
-        validation_loss.append(train_loss)
+        training_loss.append(train_loss)
 
         # compute validation loss at the end of the epoch
-        #_loss = speculator.compute_loss(training_theta, training_pca).numpy()
-        #validation_loss.append(_loss)
+        validation_loss.append(speculator.compute_loss(theta_valid, pca_valid).numpy())
     
         floss = open(_floss, "a") # append
-        floss.write('%i \t %f \t %f \n' % (batch_size, lr[i], _loss))
+        floss.write('%i \t %f \t %f \t %f\n' % (batch_size[i], lr[i], train_loss, validation_loss[-1]))
         floss.close()
 
         # early stopping condition
@@ -165,7 +163,7 @@ for i in range(len(lr)):
 
             # save attributes to file
             f = open(os.path.join(dat_dir, 
-                'fsps.%s.seed0_%i.6w%i.pca%i.%ix%i.log.pkl' % 
+                'fsps.%s.seed0_%i.6w%i.pca%i.%ix%i.pkl' % 
                 (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits)), 'wb')
             pickle.dump(attributes, f)
             f.close()
