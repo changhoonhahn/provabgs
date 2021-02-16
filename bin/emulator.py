@@ -15,7 +15,8 @@ i_wave = int(sys.argv[3])
 n_pcas = int(sys.argv[4]) 
 Nlayer = int(sys.argv[5]) 
 Nunits = int(sys.argv[6]) 
-desc = 'nbatch1000' # some descriptor 
+b_size = int(sys.argv[7]) 
+desc = 'nbatch%i' % b_size
 #-------------------------------------------------------
 #dat_dir='/scratch/gpfs/chhahn/provabgs/' # hardcoded to tiger directory 
 dat_dir='/tigress/chhahn/provabgs/'
@@ -84,7 +85,7 @@ speculator = Speculator(
 
 # cooling schedule
 lr = [1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6, 1e-6] # [1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6]
-batch_size = [1000 for _ in lr]
+batch_size = [b_size for _ in lr]
 gradient_accumulation_steps = [1 for _ in lr] # split the largest batch size into 10 when computing gradients to avoid memory overflow
 
 # early stopping set up

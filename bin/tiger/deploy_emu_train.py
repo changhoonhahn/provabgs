@@ -7,11 +7,11 @@ import os, sys
 
 
 
-def deploy_emu_train(model, nbatch, i_wave, n_pcas, Nlayer, Nunits):
+def deploy_emu_train(model, nbatch, i_wave, n_pcas, Nlayer, Nunits, b_size):
     ''' create slurm script for training speculator and then submit 
     '''
     cntnt = '\n'.join(["#!/bin/bash", 
-        "#SBATCH -J train_emu_%s_%i_%i_%i_%ix%i" % (model, nbatch, i_wave, n_pcas, Nlayer, Nunits),  
+        "#SBATCH -J emu_%s%iw%i_%i_%ix%i_%i" % (model, nbatch, i_wave, n_pcas, Nlayer, Nunits, b_size),  
         "#SBATCH --exclusive",
         "#SBATCH --nodes=1",
         "#SBATCH --ntasks-per-node=1",
@@ -19,7 +19,7 @@ def deploy_emu_train(model, nbatch, i_wave, n_pcas, Nlayer, Nunits):
         "#SBATCH --partition=general",
         "#SBATCH --time=47:59:59", 
         "#SBATCH --export=ALL",
-        "#SBATCH --output=ofiles/train_emu_%s_%i_%i_%i_%ix%i.o" % (model, nbatch, i_wave, n_pcas, Nlayer, Nunits),  
+        "#SBATCH --output=ofiles/train_emu_%s_%i_%i_%i_%ix%i_%i.o" % (model, nbatch, i_wave, n_pcas, Nlayer, Nunits, b_size),  
         "#SBATCH --mail-type=all",
         "#SBATCH --mail-user=chhahn@princeton.edu",
         "", 
@@ -29,7 +29,7 @@ def deploy_emu_train(model, nbatch, i_wave, n_pcas, Nlayer, Nunits):
         "module load anaconda3", 
         "conda activate tf2-gpu", 
         "",
-        "python /home/chhahn/projects/provabgs/bin/emulator.py %s %i %i %i %i %i" % (model, nbatch, i_wave, n_pcas, Nlayer, Nunits),
+        "python /home/chhahn/projects/provabgs/bin/emulator.py %s %i %i %i %i %i %i" % (model, nbatch, i_wave, n_pcas, Nlayer, Nunits, b_size),
         'now=$(date +"%T")', 
         'echo "end time ... $now"', 
         ""]) 
@@ -48,4 +48,5 @@ i_wave = int(sys.argv[3])
 n_pcas = int(sys.argv[4]) 
 Nlayer = int(sys.argv[5]) 
 Nunits = int(sys.argv[6]) 
-deploy_emu_train(model, nbatch, i_wave, n_pcas,  Nlayer, Nunits)
+b_size = int(sys.argv[7])
+deploy_emu_train(model, nbatch, i_wave, n_pcas,  Nlayer, Nunits, b_size)
