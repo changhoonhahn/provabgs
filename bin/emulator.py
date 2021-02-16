@@ -15,6 +15,7 @@ i_wave = int(sys.argv[3])
 n_pcas = int(sys.argv[4]) 
 Nlayer = int(sys.argv[5]) 
 Nunits = int(sys.argv[6]) 
+desc = 'nbatch1000' # some descriptor 
 #-------------------------------------------------------
 #dat_dir='/scratch/gpfs/chhahn/provabgs/' # hardcoded to tiger directory 
 dat_dir='/tigress/chhahn/provabgs/'
@@ -82,16 +83,16 @@ speculator = Speculator(
         optimizer=tf.keras.optimizers.Adam()) # optimizer for model training
 
 # cooling schedule
-lr = [1e-3, 2e-4, 5e-5, 1e-5, 1e-6] # [1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6]
-batch_size = [1000, 5000, 10000, 50000, 1000000]#, int(training_theta.shape[0])]
-gradient_accumulation_steps = [1, 1, 1, 1, 10]#, 10] # split the largest batch size into 10 when computing gradients to avoid memory overflow
+lr = [1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6, 1e-6] # [1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6]
+batch_size = [1000 for _ in lr]
+gradient_accumulation_steps = [1 for _ in lr] # split the largest batch size into 10 when computing gradients to avoid memory overflow
 
 # early stopping set up
-patience = 10
+patience = 20
 
 # writeout loss 
 _floss = os.path.join(dat_dir, 
-        'fsps.%s.seed0_%i.6w%i.pca%i.%ix%i.loss.dat' % (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits))
+        'fsps.%s.seed0_%i.6w%i.pca%i.%ix%i.%s.loss.dat' % (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits, desc))
 floss = open(_floss, 'w')
 floss.close()
 
@@ -144,27 +145,6 @@ for i in range(len(lr)):
         if early_stopping_counter >= patience:
             speculator.update_emulator_parameters()
             speculator.save(os.path.join(dat_dir,
-                '_fsps.%s.seed0_%i.6w%i.pca%i.%ix%i.log' % 
-                (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits)))
-
-            attributes = list([
-                    list(speculator.W_),
-                    list(speculator.b_),
-                    list(speculator.alphas_),
-                    list(speculator.betas_),
-                    speculator.pca_transform_matrix_,
-                    speculator.pca_shift_,
-                    speculator.pca_scale_,
-                    speculator.spectrum_shift_,
-                    speculator.spectrum_scale_,
-                    speculator.parameters_shift_,
-                    speculator.parameters_scale_,
-                    speculator.wavelengths])
-
-            # save attributes to file
-            f = open(os.path.join(dat_dir, 
-                'fsps.%s.seed0_%i.6w%i.pca%i.%ix%i.pkl' % 
-                (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits)), 'wb')
-            pickle.dump(attributes, f)
-            f.close()
+                'fsps.%s.seed0_%i.6w%i.pca%i.%ix%i.%s' % 
+                (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits, desc)))
             print('Validation loss = %s' % str(best_loss))
