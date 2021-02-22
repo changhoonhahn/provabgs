@@ -20,8 +20,8 @@ import matplotlib.pyplot as plt
 model = 'nmfburst'
 nbatch = 500 
 n_pcas  = [30, 60, 30, 30, 30, 30] # number of PCA components 
-archs = ['6x256', '6x256', '6x256', '6x256', '6x256', '6x256'] # architectures
-desc = 'nbatch1000'
+archs = ['10x256', '10x256', '10x256', '10x256', '10x256', '10x256'] # architectures
+desc = 'nbatch250'
 #dat_dir = '/Users/chahah/data/provabgs/'
 dat_dir = '/tigress/chhahn/provabgs/'
 
@@ -85,7 +85,7 @@ emus = [
         Speculator(
             restore=True, 
             restore_filename=os.path.join(dat_dir, 
-                '_fsps.%s.seed0_%i.6w%i.pca%i.%s.%s' % 
+                'fsps.%s.seed0_%i.6w%i.pca%i.%s.%s' % 
                 (model, nbatch-1, i, n_pcas[i], archs[i], desc))
             )
         for i in range(len(wave_bins))
