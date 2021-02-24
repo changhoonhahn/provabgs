@@ -26,6 +26,19 @@ def prior_nmf(ncomp):
         ])
 
 
+def prior_burst(): 
+    ''' prior on burst contribution 
+    '''
+    return Infer.load_priors([
+        Infer.UniformPrior(0., 13.8),                   # uniform priors tburst 
+        Infer.UniformPrior(6.9e-5, 7.3e-3, label='sed'),# uniform priors on ZH coeff
+        Infer.UniformPrior(6.9e-5, 7.3e-3, label='sed'),# uniform priors on ZH coeff
+        Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
+        Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust2
+        Infer.UniformPrior(-2.2, 0.4, label='sed')     # uniform priors on dust_index 
+        ])
+
+
 def prior_nmfburst(): 
     ''' prior on 4 component NMF by Rita
     '''
@@ -111,10 +124,82 @@ def fsps_prior_samples(name, ibatch, ncpu=1):
     return None 
 
 
+def fsps_burst_prior_samples(ibatch, ncpu=1): 
+    ''' run FSPS SPS model and get stellar population luminosity for a single
+    burst. This is to build a separate emulator for the burst component 
+    '''
+    np.random.seed(ibatch) 
+
+    # load priors 
+    name = 'burst'
+    priors = prior_burst() 
+
+    nspec = 10000 # batch size 
+    
+    # sample prior for burst then fit it into nmfburst theta  
+    _thetas = np.array([priors.sample() for i in range(nspec)])
+    thetas = np.zeros((nspec, 12))
+    thetas[:,6:] = _thetas 
+
+    # load SPS model  
+    Msps = Models.FSPS_NMF(name='nmfburst')
+    w_fsps, _ = Msps._fsps_burst(thetas[0]) 
+
+    # wavelength range set to cover the DESI spectra and photometric filter
+    # wavelength range 
+    wmin, wmax = 2300., 11030.
+    wlim = (w_fsps >= wmin) & (w_fsps <= wmax)
+
+    dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
+
+    fwave = os.path.join(dat_dir, 'wave_fsps.npy')
+    if not os.path.isfile(fwave): # save FSPS wavelength if not saved 
+        np.save(fwave, w_fsps[wlim])
+
+    ftheta = os.path.join(dat_dir,
+            'fsps.%s.theta.seed%i.npy' % (name, ibatch)) 
+    fspectrum = os.path.join(dat_dir, 
+            'fsps.%s.lnspectrum.seed%i.npy' % (name, ibatch)) 
+
+    if os.path.isfile(ftheta) and os.path.isfile(fspectrum): 
+        print() 
+        print('--- batch %i already exists ---' % ibatch)
+        print('--- do not overwrite ---' % ibatch)
+        print()  
+        return None 
+    else: 
+        print()  
+        print('--- batch %i ---' % ibatch)
+        # save parameters sampled from prior 
+        print('  saving thetas to %s' % ftheta)
+        np.save(ftheta, thetas)
+
+        if (ncpu == 1): # run on serial 
+            logspectra = []
+            for _theta in thetas:
+                _, _spectrum = Msps._fsps_burst(_theta)
+                logspectra.append(np.log(_spectrum[wlim]))
+        else: 
+            def _fsps_model_wrapper(theta):
+                _, _spectrum = Msps._fsps_burst(theta)
+                return np.log(_spectrum[wlim]) 
+
+            pewl = mp.Pool(ncpu) 
+            logspectra = pewl.map(_fsps_model_wrapper, thetas) 
+
+        print('  saving ln(spectra) to %s' % fspectrum)
+        np.save(fspectrum, np.array(logspectra))
+        print()  
+    return None 
+
+
 if __name__=='__main__': 
     mp.freeze_support()
     name    = sys.argv[1]
     ibatch  = int(sys.argv[2]) 
     ncpu    = int(sys.argv[3]) 
-
-    fsps_prior_samples(name, ibatch, ncpu=ncpu)
+    
+    if name != 'burst': 
+        fsps_prior_samples(name, ibatch, ncpu=ncpu)
+    else: 
+        fsps_burst_prior_samples(ibatch, ncpu=ncpu) 

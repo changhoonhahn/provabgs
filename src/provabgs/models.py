@@ -226,8 +226,7 @@ class Model(object):
 
 
 class FSPS(Model): 
-    ''' Model class object with FSPS models with different SFH
-    parameterizations. 
+    ''' Model class object with FSPS models with tau model SFH parameterizations. 
     '''
     def __init__(self, name='nmf_bases', cosmo=None): 
         self.name = name 
@@ -349,137 +348,6 @@ class FSPS(Model):
         else: 
             return outwave, outspec, maggies
 
-    def _fsps_nmf(self, tt): 
-        ''' FSPS SPS model using NMF SFH and ZH bases 
-
-        Parameters 
-        ----------
-        tt : array_like[Nparam] 
-            Parameter values for the **default setup**
-
-
-        Returns
-        -------
-        wave_rest : array_like[Nwave] 
-            rest-frame wavelength of SSP flux 
-
-
-        lum_ssp : array_like[Nwave] 
-            FSPS SSP luminosity in units of Lsun/A
-
-        Notes
-        -----
-        * 12/23/2020: age of SSPs are no longer set to the center of the
-          lookback time as this  ignores the youngest tage ~ 0 SSP, which have
-          significant contributions. Also we set a minimum tage = 1e-8 because
-          FSPS returns a grid for tage = 0 but 1e-8 gets the youngest isochrone
-          anyway. 
-        '''
-        if self._ssp is None: 
-            # initialize FSPS StellarPopulation object
-            self._ssp_initiate() 
-    
-        ncomp_zh = self._Ncomp_zh
-        tt_zh           = tt[-6:-4]
-        tt_dust1        = tt[-4]
-        tt_dust2        = tt[-3]
-        tt_dust_index   = tt[-2]
-        zred            = tt[-1] 
-        
-        # SFH at lookback time  
-        tlookback, sfh = self.SFH(np.concatenate([[0.], tt[:-1]]), zred)
-        # ZH at lookback time bins 
-        _, zh = self.ZH(np.concatenate([[0.], tt[:-1]]), zred)
-    
-        dt = np.zeros(len(tlookback))
-        dt[1:-1] = 0.5 * (np.diff(tlookback)[1:] + np.diff(tlookback)[:-1]) 
-        dt[0]   = 0.5 * (tlookback[1] - tlookback[0]) 
-        dt[-1]  = 0.5 * (tlookback[-1] - tlookback[-2]) 
-    
-        for i, tage in enumerate(tlookback): 
-            m = dt[i] * sfh[i] # mass formed in this bin 
-            if m == 0 and i != 0: continue 
-
-            self._ssp.params['logzsol'] = np.log10(zh[i]/0.0190) # log(Z/Zsun)
-            self._ssp.params['dust1'] = tt_dust1
-            self._ssp.params['dust2'] = tt_dust2 
-            self._ssp.params['dust_index'] = tt_dust_index
-            
-            wave_rest, lum_i = self._ssp.get_spectrum(
-                    tage=np.clip(tage, 1e-8, None), 
-                    peraa=True) # in units of Lsun/AA
-            # note that this spectrum is normalized such that the total formed
-            # mass = 1 Msun
-
-            if i == 0: lum_ssp = np.zeros(len(wave_rest))
-            lum_ssp += m * lum_i 
-
-        return wave_rest, lum_ssp
-
-    def _fsps_nmf_v0(self, tt): 
-        ''' FSPS SPS model using NMF SFH and ZH bases 
-
-        Parameters 
-        ----------
-        tt : array_like[Nparam] 
-            Parameter values for the **default setup**
-
-
-        Returns
-        -------
-        wave_rest : array_like[Nwave] 
-            rest-frame wavelength of SSP flux 
-
-
-        lum_ssp : array_like[Nwave] 
-            FSPS SSP luminosity in units of Lsun/A
-        '''
-        if self._ssp is None: 
-            # initialize FSPS StellarPopulation object
-            self._ssp_initiate() 
-    
-        ncomp_sfh = self._Ncomp_sfh
-        ncomp_zh = self._Ncomp_zh
-        tt_sfh          = tt[:ncomp_sfh] 
-        tt_zh           = tt[ncomp_sfh:ncomp_sfh+ncomp_zh]
-        tt_dust1        = tt[ncomp_sfh+ncomp_zh]
-        tt_dust2        = tt[ncomp_sfh+ncomp_zh+1]
-        tt_dust_index   = tt[ncomp_sfh+ncomp_zh+2]
-        tage            = tt[ncomp_sfh+ncomp_zh+3] 
-    
-        tlookback = np.linspace(0, tage, 100) # lookback time edges
-        tages = 0.5 * (tlookback[1:] + tlookback[:-1])
-        dt = np.diff(tlookback)
-
-        # SFH at lookback time  
-        sfh = np.sum(np.array([
-            tt_sfh[i] *
-            self._sfh_basis[i](tlookback)/np.trapz(self._sfh_basis[i](tlookback), tlookback) 
-            for i in range(ncomp_sfh)]), 
-            axis=0)
-        # ZH at the center of the lookback time bins 
-        zh = np.sum(np.array([
-            tt_zh[i] * self._zh_basis[i](tages) for i in range(ncomp_zh)]), 
-            axis=0)
-    
-        for i, tage in enumerate(tages): 
-            m = dt[i] * 0.5 * (sfh[i] + sfh[i+1]) # mass formed in this bin 
-            if m <= 0 and i != 0: continue 
-
-            self._ssp.params['logzsol'] = np.log10(zh[i]/0.0190) # log(Z/Zsun)
-            self._ssp.params['dust1'] = tt_dust1
-            self._ssp.params['dust2'] = tt_dust2 
-            self._ssp.params['dust_index'] = tt_dust_index
-            
-            wave_rest, lum_i = self._ssp.get_spectrum(tage=tage, peraa=True) # in units of Lsun/AA
-            # note that this spectrum is normalized such that the total formed
-            # mass = 1 Msun
-
-            if i == 0: lum_ssp = np.zeros(len(wave_rest))
-            lum_ssp += m * lum_i 
-
-        return wave_rest, lum_ssp
-    
     def _fsps_tau(self, tt): 
         ''' FSPS SPS model with tau or delayed-tau model SFH  
 
@@ -530,75 +398,6 @@ class FSPS(Model):
         ''' star formation history given parameters and redshift 
         '''
         return self._SFH(np.atleast_2d(tt), zred)
-
-    def _SFH_nmf(self, tt, zred): 
-        ''' SFH based on NMF SFH bases
-        '''
-        ncomp_sfh = self._Ncomp_sfh
-        tt_sfh = tt[:,1:ncomp_sfh+1] # sfh basis coefficients 
-        
-        assert isinstance(zred, float)
-
-        tage = self.cosmo.age(zred).value # age in Gyr
-        t = np.linspace(0., tage, 100) # look back time 
-        
-        # normalized basis out to t 
-        _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
-            for i in range(ncomp_sfh)])
-
-        # caluclate normalized SFH
-        sfh = np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] 
-            for i in range(ncomp_sfh)]), axis=0)
-
-        # multiply by stellar mass 
-        sfh *= 10**tt[:,0][:,None]
-
-        if tt.shape[0] == 1: 
-            return t, sfh[0]
-        else: 
-            return t, sfh 
-
-    def _SFH_nmf_burst(self, tt, zred): 
-        ''' SFH based on NMF bases with a burst
-        '''
-        ncomp_sfh = self._Ncomp_sfh
-        tt_sfh = tt[:,1:ncomp_sfh+1] # sfh basis coefficients 
-        fburst = tt[:,ncomp_sfh+1]
-        tburst = tt[:,ncomp_sfh+2]
-        
-        assert isinstance(zred, float)
-
-        tage = self.cosmo.age(zred).value # age in Gyr
-        t = np.linspace(0., tage, 100) # look back time 
-        dt = t[1] - t[0] 
-        
-        sfh = np.zeros((tt_sfh.shape[0], 100))
-        # burst contribution 
-        has_burst = (tburst < tage) # burst within the age of the galaxy 
-
-        fburst[~has_burst] = 0. 
-
-        iburst = np.floor(tburst[has_burst] / dt).astype(int)
-        dts = np.repeat(dt, 100)
-        dts[0] *= 0.5 
-        dts[-1] *= 0.5 
-        sfh[has_burst, iburst] += fburst[has_burst] / dts[iburst]
-
-        # normalized basis out to t 
-        _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
-            for i in range(ncomp_sfh)])
-
-        # caluclate normalized SFH
-        sfh += (1. - fburst)[:,None] * np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] 
-            for i in range(ncomp_sfh)]), axis=0)
-
-        # multiply by stellar mass 
-        sfh *= 10**tt[:,0][:,None]
-
-        if tt.shape[0] == 1: 
-            return t, sfh[0]
-        else: 
-            return t, sfh 
 
     def _SFH_tau(self, tt, zred): 
         ''' tau or delayed-tau model star formation history 
@@ -659,96 +458,6 @@ class FSPS(Model):
         ''' metallicity history 
         '''
         return self._ZH(np.atleast_2d(tt), zred, tcosmic=tcosmic) 
-
-    def _ZH_nmf(self, tt, zred, tcosmic=None): 
-        ''' metallicity history for a set of parameter values `tt` and redshift `zred`
-
-        parameters
-        ----------
-        tt : array_like[N,Nparam]
-           Parameter values of [log M*, b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH,
-           'dust1', 'dust2', 'dust_index']. 
-
-        zred : float
-            redshift
-
-        tcosmic : array_like
-            cosmic time
-
-        Returns 
-        -------
-        t : array_like[100,]
-            cosmic time linearly spaced from 0 to the age of the galaxy
-
-        zh : array_like[N,100]
-            metallicity at cosmic time t --- ZH(t) 
-        '''
-        ncomp_zh = self._Ncomp_zh
-        tt_zh = tt[:,self._Ncomp_sfh+1:self._Ncomp_sfh+ncomp_zh+1] # zh bases 
-        
-        assert isinstance(zred, float)
-        tage = self.cosmo.age(zred).value # age in Gyr
-        if tcosmic is not None: 
-            assert tage >= np.max(tcosmic) 
-            t = tcosmic.copy() 
-        else: 
-            t = np.linspace(0, tage, 100)
-
-        # metallicity basis is not normalized
-        _z_basis = np.array([self._zh_basis[i](t) for i in range(ncomp_zh)]) 
-
-        # get metallicity history
-        zh = np.sum(np.array([tt_zh[:,i][:,None] * _z_basis[i][None,:] 
-            for i in range(ncomp_zh)]), axis=0) 
-        if tt.shape[0] == 1: 
-            return t, zh[0]
-        else: 
-            return t, zh 
-
-    def _ZH_nmf_burst(self, tt, zred, tcosmic=None): 
-        ''' metallicity history for a set of parameter values `tt` and redshift `zred`
-
-        parameters
-        ----------
-        tt : array_like[N,Nparam]
-           Parameter values of [log M*, b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH,
-           'dust1', 'dust2', 'dust_index']. 
-
-        zred : float
-            redshift
-
-        tcosmic : array_like
-            cosmic time
-
-        Returns 
-        -------
-        t : array_like[100,]
-            cosmic time linearly spaced from 0 to the age of the galaxy
-
-        zh : array_like[N,100]
-            metallicity at cosmic time t --- ZH(t) 
-        '''
-        ncomp_zh = self._Ncomp_zh
-        tt_zh = tt[:,self._Ncomp_sfh+3:self._Ncomp_sfh+ncomp_zh+3] # zh bases 
-        
-        assert isinstance(zred, float)
-        tage = self.cosmo.age(zred).value # age in Gyr
-        if tcosmic is not None: 
-            assert tage >= np.max(tcosmic) 
-            t = tcosmic.copy() 
-        else: 
-            t = np.linspace(0, tage, 100)
-
-        # metallicity basis is not normalized
-        _z_basis = np.array([self._zh_basis[i](t) for i in range(ncomp_zh)]) 
-
-        # get metallicity history
-        zh = np.sum(np.array([tt_zh[:,i][:,None] * _z_basis[i][None,:] 
-            for i in range(ncomp_zh)]), axis=0) 
-        if tt.shape[0] == 1: 
-            return t, zh[0]
-        else: 
-            return t, zh 
     
     def _ZH_tau(self, tt, zred, tcosmic=None): 
         ''' constant metallicity 
@@ -768,82 +477,28 @@ class FSPS(Model):
     def _init_model(self, **kwargs): 
         ''' initialize theta values 
         '''
-        if self.name in ['nmf_bases']: 
-            self._sps_parameters = [
-                    'logmstar', 
-                    'beta1_sfh', 
-                    'beta2_sfh', 
-                    'beta3_sfh',
-                    'beta4_sfh', 
-                    'gamma1_zh', 
-                    'gamma2_zh', 
-                    'dust1', 
-                    'dust2',
-                    'dust_index']
-            self._sps_model = self._fsps_nmf
-            self._load_NMF_bases(name='tojeiro.4comp')
-            self._SFH   = self._SFH_nmf
-            self._ZH    = self._ZH_nmf
-        elif 'nmf_tng' in self.name: # 6 components for SFH 
-            icomp = int(self.name.split('_')[1][-1])
-            self._sps_parameters = [
-                            'logmstar' ] + [
-                            'beta%i_sfh' % (i+1) for i in range(icomp)] + [ 
-                            'gamma1_zh', 
-                            'gamma2_zh', 
-                            'dust1', 
-                            'dust2',
-                            'dust_index']
-            self._sps_model = self._fsps_nmf
-            self._load_NMF_bases('tng.%icomp' % icomp)
-            self._SFH   = self._SFH_nmf
-            self._ZH    = self._ZH_nmf
-        elif self.name == 'nmfburst': 
-            self._sps_parameters = [
-                    'logmstar', 
-                    'beta1_sfh', 
-                    'beta2_sfh', 
-                    'beta3_sfh',
-                    'beta4_sfh', 
-                    'fburst', 
-                    'tburst',   # lookback time of the universe when burst occurs (tburst < tage) 
-                    'gamma1_zh', 
-                    'gamma2_zh', 
-                    'dust1', 
-                    'dust2',
-                    'dust_index']
-            self._sps_model = self._fsps_nmf
-            self._load_NMF_bases(name='tojeiro.4comp')
-            self._SFH   = self._SFH_nmf_burst
-            self._ZH    = self._ZH_nmf_burst 
-        elif self.name in ['tau', 'delayed_tau']: 
-            self._sps_parameters = [
-                    'logmstar', 
-                    'tau_sfh',      # e-folding time in Gyr 0.1 < tau < 10^2
-                    'const_sfh',    # constant component 0 < C < 1 
-                    'sf_start',     # start time of SFH in Gyr #'sf_trunc',     # trunctation time of the SFH in Gyr
-                    'fburst',       # fraction of mass formed in an instantaneous burst of star formation
-                    'tburst',       # age of the universe when burst occurs 
-                    'metallicity', 
-                    'dust2']
-            self._sps_model = self._fsps_tau 
-            if self.name == 'tau': self._delayed_tau = False
-            elif self.name == 'delayed_tau': self._delayed_tau = True
-            self._SFH   = self._SFH_tau
-            self._ZH    = self._ZH_tau
-        else: 
-            raise NotImplementedError 
+        self._sps_parameters = [
+                'logmstar', 
+                'tau_sfh',      # e-folding time in Gyr 0.1 < tau < 10^2
+                'const_sfh',    # constant component 0 < C < 1 
+                'sf_start',     # start time of SFH in Gyr #'sf_trunc',     # trunctation time of the SFH in Gyr
+                'fburst',       # fraction of mass formed in an instantaneous burst of star formation
+                'tburst',       # age of the universe when burst occurs 
+                'metallicity', 
+                'dust2']
+        self._sps_model = self._fsps_tau 
+        if self.name == 'tau': self._delayed_tau = False
+        elif self.name == 'delayed_tau': self._delayed_tau = True
+        self._SFH   = self._SFH_tau
+        self._ZH    = self._ZH_tau
+
         return None 
 
     def _ssp_initiate(self): 
         ''' initialize sps (FSPS StellarPopulaiton object) 
         '''
         import fsps
-        if self.name in ['nmf_bases', 'nmfburst']: 
-            sfh         = 0 
-            dust_type   = 4
-            imf_type    = 1 # chabrier
-        elif self.name == 'tau': 
+        if self.name == 'tau': 
             sfh         = 1
             dust_type   = 2 # Calzetti et al. (2000) attenuation curve
             imf_type    = 1 # chabrier
@@ -860,6 +515,813 @@ class FSPS(Model):
                 dust_type=dust_type,            
                 imf_type=imf_type)             # chabrier 
         return None  
+
+
+class FSPS_NMF(FSPS): 
+    ''' Model class object with FSPS models with NMF basis SFH and ZH parameterizations. 
+    Currently supports models `nmf_bases` and `nmfburst`
+
+    **description here** 
+
+    '''
+    def __init__(self, name='nmf', cosmo=None): 
+        super().__init__(name=name, cosmo=cosmo) # initializes the model
+
+    def _fsps_nmfburst(self, tt): 
+        ''' FSPS SPS model using NMF SFH and ZH bases 
+
+        Parameters 
+        ----------
+        tt : array_like[Nparam] 
+            FSPS parameters (does not include stellar mass)
+
+        Returns
+        -------
+        wave_rest : array_like[Nwave] 
+            rest-frame wavelength of SSP flux 
+
+
+        lum_ssp : array_like[Nwave] 
+            FSPS SSP luminosity in units of Lsun/A
+
+        Notes
+        -----
+        * 12/23/2020: age of SSPs are no longer set to the center of the
+          lookback time as this  ignores the youngest tage ~ 0 SSP, which have
+          significant contributions. Also we set a minimum tage = 1e-8 because
+          FSPS returns a grid for tage = 0 but 1e-8 gets the youngest isochrone
+          anyway. 
+        * 02/22/2021: restructured so that the NMF and burst contributions are
+        separated 
+        '''
+        fburst, tburst = tt[self._i_sfh_burst-1]
+        zred = tt[-1] 
+        tage = self.cosmo.age(zred).value # age in Gyr
+
+        # nmf luminosity contribution 
+        wave_rest, lum_ssp = self._fsps_nmf(tt)
+        
+        # starburst luminosity contribution 
+        lum_burst = np.zeros(lum_ssp.shape)
+        if tburst < tage: # if starburst is within the age of the galaxy 
+            _, lum_burst = self._fsps_burst(tt)
+
+            # renormalize NMF contribution  
+            lum_ssp *= (1. - fburst) 
+
+            # add in burst contribution 
+            lum_ssp += fburst * lum_burst
+
+        return wave_rest, lum_ssp
+
+    def _fsps_nmf(self, tt): 
+        ''' FSPS SPS model using NMF SFH and ZH bases 
+
+        Parameters 
+        ----------
+        tt : array_like[Nparam] 
+            FSPS parameters (does not include stellar mass)
+
+        Returns
+        -------
+        wave_rest : array_like[Nwave] 
+            rest-frame wavelength of SSP flux 
+
+
+        lum_ssp : array_like[Nwave] 
+            FSPS SSP luminosity in units of Lsun/A
+
+        Notes
+        -----
+        * 12/23/2020: age of SSPs are no longer set to the center of the
+          lookback time as this  ignores the youngest tage ~ 0 SSP, which have
+          significant contributions. Also we set a minimum tage = 1e-8 because
+          FSPS returns a grid for tage = 0 but 1e-8 gets the youngest isochrone
+          anyway. 
+        '''
+        if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
+        dust1       = tt[-4]
+        dust2       = tt[-3]
+        dust_index  = tt[-2]
+        zred        = tt[-1] 
+        
+        # NMF SFH at lookback time  
+        tlookback, sfh = self._SFH_nmf(np.concatenate([[0.], tt[:-1]]), zred)
+        # NMF ZH at lookback time bins 
+        _, zh = self.ZH(np.concatenate([[0.], tt[:-1]]), zred)
+
+        dt = np.zeros(len(tlookback))
+        dt[1:-1] = 0.5 * (np.diff(tlookback)[1:] + np.diff(tlookback)[:-1]) 
+        dt[0]   = 0.5 * (tlookback[1] - tlookback[0]) 
+        dt[-1]  = 0.5 * (tlookback[-1] - tlookback[-2]) 
+    
+        for i, tage in enumerate(tlookback): 
+            m = dt[i] * sfh[i] # mass formed in this bin 
+            if m == 0 and i != 0: continue 
+
+            self._ssp.params['logzsol'] = np.log10(zh[i]/0.0190) # log(Z/Zsun)
+            self._ssp.params['dust1'] = dust1
+            self._ssp.params['dust2'] = dust2 
+            self._ssp.params['dust_index'] = dust_index
+            
+            wave_rest, lum_i = self._ssp.get_spectrum(
+                    tage=np.clip(tage, 1e-8, None), 
+                    peraa=True) # in units of Lsun/AA
+            # note that this spectrum is normalized such that the total formed
+            # mass = 1 Msun
+
+            if i == 0: lum_ssp = np.zeros(len(wave_rest))
+            lum_ssp += m * lum_i 
+
+        return wave_rest, lum_ssp
+
+    def _fsps_burst(self, tt):
+        ''' dust attenuated luminosity contribution from a SSP that corresponds
+        to the burst. This spectrum is normalized such that the total formed
+        mass is 1 Msun, **not** fburst 
+        '''
+        if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
+        tt_zh           = tt[self._i_zh_nmf - 1]
+        fburst, tburst  = tt[self._i_sfh_burst - 1]
+        dust1           = tt[-4]
+        dust2           = tt[-3]
+        dust_index      = tt[-2]
+
+        # get metallicity at tburst 
+        zburst = np.sum(np.array([tt_zh[i] * self._zh_basis[i](tburst) for i in range(self._N_nmf_zh)]))
+    
+        # luminosity of SSP at tburst 
+        self._ssp.params['logzsol'] = np.log10(zburst/0.0190) # log(Z/Zsun)
+        self._ssp.params['dust1'] = dust1
+        self._ssp.params['dust2'] = dust2 
+        self._ssp.params['dust_index'] = dust_index
+        
+        wave_rest, lum_burst = self._ssp.get_spectrum(
+                tage=np.clip(tburst, 1e-8, None), 
+                peraa=True) # in units of Lsun/AA
+        # note that this spectrum is normalized such that the total formed
+        # mass = 1 Msun
+        return wave_rest, lum_burst
+
+    def SFH(self, tt, zred): 
+        ''' star formation history given parameters and redshift 
+        '''
+        return self._SFH(np.atleast_2d(tt), zred)
+
+    def _SFH_nmfburst(self, tt, zred): 
+        ''' SFH based on NMF bases with a burst
+        '''
+        # fraction of stellar mass from star burst
+        fburst, tburst = tt[:,self._i_sfh_burst].T
+        
+        noburst = (tburst > self.cosmo.age(zred).value) 
+        fburst[noburst] = 0. 
+    
+        # NMF SFH 
+        t, sfh_nmf = self._SFH_nmf(tt, zred)
+    
+        # (normalized starburst SFH) x (stellar mass) 
+        sfh_burst = self._SFH_burst(tburst, t) * 10**tt[:,0][:,None]
+        
+        # NMF + starburst 
+        sfh = (1. - fburst)[:,None] * sfh_nmf + fburst[:,None] * sfh_burst 
+        
+        if tt.shape[0] == 1: return t, sfh[0]
+        return t, sfh
+
+    def _SFH_nmf(self, tt, zred): 
+        ''' SFH based on NMF SFH bases
+        '''
+        tt = np.atleast_2d(tt) # necessary redundancy
+
+        # sfh nmf basis coefficients 
+        tt_sfh = tt[:,self._i_sfh_nmf] 
+        
+        assert isinstance(zred, float)
+
+        tage = self.cosmo.age(zred).value # age in Gyr
+        t = np.linspace(0., tage, 100) # look back time 
+        
+        # normalized basis out to t 
+        _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
+            for i in range(self._N_nmf_sfh)])
+
+        # caluclate normalized SFH
+        sfh = np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] 
+            for i in range(self._N_nmf_sfh)]), axis=0)
+
+        # multiply by stellar mass 
+        sfh *= 10**tt[:,0][:,None]
+
+        if tt.shape[0] == 1: return t, sfh[0]
+        return t, sfh 
+    
+    def _SFH_burst(self, tburst, tgrid): 
+        ''' place a single star-burst event on a given *evenly spaced* lookback time grid
+        '''
+        tburst = np.atleast_1d(tburst)
+        dt = tgrid[1] - tgrid[0] 
+        
+        sfh = np.zeros((len(tburst), len(tgrid)))
+
+        # burst within the age of the galaxy 
+        has_burst = (tburst < tgrid.max()) 
+
+        iburst = np.floor(tburst[has_burst] / dt).astype(int)
+        dts = np.repeat(dt, 100)
+        dts[0] *= 0.5 
+        dts[-1] *= 0.5 
+        sfh[has_burst, iburst] += 1. / dts[iburst]
+        return sfh 
+    
+    def ZH(self, tt, zred, tcosmic=None): 
+        ''' metallicity history 
+
+        parameters
+        ----------
+        tt : array_like[N,Nparam]
+           parameter values of the model 
+
+        zred : float
+            redshift of galaxy/csp
+
+        tcosmic : array_like
+            cosmic time
+
+        Returns 
+        -------
+        t : array_like[100,]
+            cosmic time linearly spaced from 0 to the age of the galaxy
+
+        zh : array_like[N,100]
+            metallicity at cosmic time t --- ZH(t) 
+        '''
+        # metallicity history basis coefficients  
+        tt_zh = np.atleast_2d(tt)[:,self._i_zh_nmf]
+
+        assert isinstance(zred, float)
+        tage = self.cosmo.age(zred).value # age in Gyr
+        if tcosmic is not None: 
+            assert tage >= np.max(tcosmic) 
+            t = tcosmic.copy() 
+        else: 
+            t = np.linspace(0, tage, 100)
+
+        # metallicity basis is not normalized
+        _z_basis = np.array([self._zh_basis[i](t) for i in range(self._N_nmf_zh)]) 
+
+        # get metallicity history
+        zh = np.sum(np.array([tt_zh[:,i][:,None] * _z_basis[i][None,:] for i in range(self._N_nmf_zh)]), axis=0) 
+
+        if tt_zh.shape[0] == 1: return t, zh[0]
+        return t, zh 
+
+    def _init_model(self, **kwargs): 
+        ''' initialize the model
+        '''
+        # load 4 component NMF bases from Rita 
+        self._load_NMF_bases(name='tojeiro.4comp')
+        self._N_nmf_sfh = 4 # 4 NMF component SFH
+        self._N_nmf_zh  = 2 # 2 NMF component ZH 
+
+        self._sps_model = self._fsps_nmf
+
+        if self.name == 'nmf': 
+            self._sps_parameters = [
+                    'logmstar', 
+                    'beta1_sfh', 
+                    'beta2_sfh', 
+                    'beta3_sfh',
+                    'beta4_sfh', 
+                    'gamma1_zh', 
+                    'gamma2_zh', 
+                    'dust1', 
+                    'dust2',
+                    'dust_index']
+            self._SFH   = self._SFH_nmf
+            # indices of SFH and ZH parameters
+            self._i_sfh_nmf  = np.array([1, 2, 3, 4])
+            self._i_zh_nmf   = np.array([5, 6]) 
+        elif self.name == 'nmfburst': 
+            self._sps_parameters = [
+                    'logmstar', 
+                    'beta1_sfh', 
+                    'beta2_sfh', 
+                    'beta3_sfh',
+                    'beta4_sfh', 
+                    'fburst', 
+                    'tburst',   # lookback time of the universe when burst occurs (tburst < tage) 
+                    'gamma1_zh', 
+                    'gamma2_zh', 
+                    'dust1', 
+                    'dust2',
+                    'dust_index']
+            self._SFH   = self._SFH_nmfburst
+            # indices of SFH and ZH parameters
+            self._i_sfh_nmf     = np.array([1, 2, 3, 4])
+            self._i_sfh_burst   = np.array([5, 6])
+            self._i_zh_nmf      = np.array([7, 8]) 
+        else: 
+            raise NotImplementedError 
+        return None 
+
+    def _ssp_initiate(self): 
+        ''' initialize sps (FSPS StellarPopulaiton object) 
+        '''
+        import fsps
+
+        sfh         = 0 # tabulated SFH
+        dust_type   = 4 # dust1, dust2, and dust_index 
+        imf_type    = 1 # chabrier
+
+        self._ssp = fsps.StellarPopulation(
+                zcontinuous=1,          # interpolate metallicities
+                sfh=sfh,                # sfh type 
+                dust_type=dust_type,            
+                imf_type=imf_type)             # chabrier 
+        return None  
+
+
+class Emulator_NMF(FSPS_NMF): 
+    ''' FSPS emulator that 
+
+    more details to come 
+
+
+    References
+    ----------
+    * Alsing et al.(2020) 
+
+
+    Dev. Notes
+    ----------
+    '''
+    def __init__(self, name='nmfburst', cosmo=None): 
+        super().__init__(name=name, cosmo=cosmo)
+
+    def sed(self, tt, zred, vdisp=0., wavelength=None, resolution=None,
+            filters=None, debug=False): 
+        ''' compute the redshifted spectral energy distribution (SED) for a given set of parameter values and redshift.
+       
+
+        Parameters
+        ----------
+        tt : array_like[Nsample,Nparam] 
+            Parameter values of emulator model
+            * For DESIemulator.name == 'nmfburst': [log M*, beta1_sfh,
+            beta2_sfh, beta3_sfh, beta4_sfh, fburst, tburst, gamma1_zh,
+            gamma2_zh, dust1, dust2, dust_index] 
+
+        zred : float or array_like
+            redshift of the SED 
+
+        vdisp : float or array_like
+            velocity dispersion  
+
+        wavelength : array_like[Nwave,]
+            If you want to use your own wavelength. If specified, the model
+            will interpolate the spectra to the specified wavelengths. By
+            default, it will use the speculator wavelength
+            (Default: None)  
+
+        resolution : array_like[N,Nwave]
+            resolution matrix (e.g. DESI data provides a resolution matrix)  
+    
+        filters : object
+            Photometric bandpass filter to generate photometry.
+            `speclite.FilterResponse` object. 
+
+        debug: boolean
+            If True, prints out a number lines to help debugging 
+
+
+        Returns
+        -------
+        outwave : [Nsample, Nwave]
+            output wavelengths in angstrom. 
+
+        outspec : [Nsample, Nwave]
+            the redshifted SED in units of 1e-17 * erg/s/cm^2/Angstrom.
+        '''
+        tt      = np.atleast_2d(tt)
+        zred    = np.atleast_1d(zred) 
+        vdisp   = np.atleast_1d(vdisp) 
+        ntheta  = tt.shape[1]
+
+        assert tt.shape[0] == zred.shape[0]
+       
+        outwave, outspec, maggies = [], [], [] 
+        for _tt, _zred in zip(tt, zred): 
+            # check redshift range
+            assert (_zred >= 0.) and (_zred < 0.5), "outside of 0.0 <z < 0.5"
+            assert np.isclose(np.sum(_tt[1:5]), 1.), "SFH basis coefficients should add up to 1"
+
+
+            if debug: 
+                print('emulator.sed: redshift = %f' % zred)
+                print('emulator.sed: tage = %f' % tage) 
+
+            # [parameters] + [zred] 
+            tt_arr = np.concatenate([_tt, [_zred]])
+            
+            # get SSP luminosity
+            ssp_log_lum = self._emulator(tt_arr[1:]) 
+
+            # mass normalization
+            lum_ssp = np.exp(tt_arr[0] * np.log(10) + ssp_log_lum)
+
+            # redshift the spectra
+            w_z = self._emu_waves * (1. + _zred)
+            d_lum = self._d_lum_z_interp(_zred) 
+            flux_z = lum_ssp * UT.Lsun() / (4. * np.pi * d_lum**2) / (1. + _zred) * 1e17 # 10^-17 ergs/s/cm^2/Ang
+            
+            # apply velocity dispersion 
+            wave_smooth, flux_smooth = self._apply_vdisp(w_z, flux_z, vdisp)
+            
+            if wavelength is None: 
+                outwave.append(wave_smooth)
+                outspec.append(flux_smooth)
+            else: 
+                outwave.append(wavelength)
+
+                # resample flux to input wavelength  
+                resampflux = UT.trapz_rebin(wave_smooth, flux_smooth, xnew=wavelength) 
+
+                if resolution is not None: 
+                    # apply resolution matrix 
+                    _i = 0 
+                    for res in np.atleast_1d(resolution):
+                        _res = UT.Resolution(res) 
+                        resampflux[_i:_i+res.shape[-1]] = _res.dot(resampflux[_i:_i+res.shape[-1]]) 
+                        _i += res.shape[-1]
+                outspec.append(resampflux) 
+
+            if filters is not None: 
+                # calculate photometry from SEDs 
+                _maggies = filters.get_ab_maggies(np.atleast_2d(flux_z) *
+                        1e-17*U.erg/U.s/U.cm**2/U.Angstrom, wavelength=w_z *
+                        U.Angstrom)
+                maggies.append(np.array(list(_maggies[0])) * 1e9)
+
+        if len(outwave) == 1: 
+            outwave = outwave[0] 
+            outspec = outspec[0] 
+            if filters is not None: maggies = maggies[0]
+        else: 
+            outwave = np.array(outwave)
+            outspec = np.array(outspec) 
+            if filters is not None: maggies = np.array(maggies)
+
+        if filters is None: 
+            return outwave, outspec
+        else: 
+            return outwave, outspec, maggies
+
+    def _emulator(self, tt):
+        ''' forward pass through the the three speculator NN wave bins to
+        predict SED 
+        
+        
+        Parameters
+        ----------
+        tt : array_like[Nparam,]
+            * For DESIemulator.name == 'nmfburst': 
+            [beta1_sfh, beta2_sfh, beta3_sfh, beta4_sfh, fburst, tburst, gamma1_zh, gamma2_zh, dust1, dust2, dust_index, tage] 
+    
+        Returns
+        -------
+        logflux : array_like[Nwave,] 
+            (natural) log of (SSP luminosity in units of Lsun/A)
+        '''
+        logflux = [] 
+        for iwave in range(self.n_emu): # wave bins
+
+            # forward pass through the network
+            act = []
+            offset = np.log(np.sum(tt[:4]))
+
+            layers = [(tt - self._emu_theta_mean[iwave])/self._emu_theta_std[iwave]]
+
+            for i in range(self._emu_n_layers[iwave]-1):
+           
+                # linear network operation
+                act.append(np.dot(layers[-1], self._emu_W[iwave][i]) + self._emu_b[iwave][i])
+
+                # pass through activation function
+                layers.append((self._emu_beta[iwave][i] + (1.-self._emu_beta[iwave][i]) * 1./(1.+np.exp(-self._emu_alpha[iwave][i]*act[-1])))*act[-1])
+
+            # final (linear) layer -> (normalized) PCA coefficients
+            layers.append(np.dot(layers[-1], self._emu_W[iwave][-1]) + self._emu_b[iwave][-1])
+
+            # rescale PCA coefficients, multiply out PCA basis -> normalized spectrum, shift and re-scale spectrum -> output spectrum
+            _logflux = np.dot(layers[-1]*self._emu_pca_std[iwave] + self._emu_pca_mean[iwave], self._emu_pcas[iwave]) * self._emu_spec_std[iwave] + self._emu_spec_mean[iwave] + offset
+            logflux.append(_logflux)
+
+        return np.concatenate(logflux) 
+
+    def _load_model_params(self): 
+        ''' read in pickle files that contains the parameters for the FSPS
+        emulator that is split into wavelength bins
+        '''
+        if self.name == 'nmfburst': 
+            npcas = [30, 60, 30, 30, 30, 30] # wavelength bins 
+            f_nn = lambda npca, i: 'fsps.nmfburst.seed0_499.6w%i.pca%i.10x256.nbatch250.pkl' % (i, npca)
+        
+        self.n_emu = len(npcas) # number of emulator 
+        self._emu_W             = []
+        self._emu_b             = []
+        self._emu_alpha         = []
+        self._emu_beta          = []
+        self._emu_pcas          = []
+        self._emu_pca_mean      = []
+        self._emu_pca_std       = []
+        self._emu_spec_mean     = []
+        self._emu_spec_std      = []
+        self._emu_theta_mean    = []
+        self._emu_theta_std     = []
+        self._emu_wave          = []
+
+        self._emu_n_layers = []
+
+        for i, npca in enumerate(npcas): 
+            fpkl = open(os.path.join(
+                os.path.dirname(os.path.realpath(__file__)), 'dat', 
+                f_nn(npca, i)), 'rb')
+            params = pickle.load(fpkl)
+            fpkl.close()
+
+            self._emu_W.append(params[0])
+            self._emu_b.append(params[1])
+            self._emu_alpha.append(params[2])
+            self._emu_beta.append(params[3])
+            self._emu_theta_mean.append(params[4])
+            self._emu_theta_std.append(params[5])
+            self._emu_pca_mean.append(params[6])
+            self._emu_pca_std.append(params[7])
+            self._emu_spec_mean.append(params[8])
+            self._emu_spec_std.append(params[9])
+            self._emu_pcas.append(params[10])
+            self._emu_wave.append(params[13])
+
+            self._emu_n_layers.append(params[16]) # number of network layers
+
+        self._emu_waves = np.concatenate(self._emu_wave) 
+        return None 
+
+
+
+class DESIemulator(FSPS): 
+    ''' FSPS model emulator that is specifically trained for the DESI PROVABGS.
+
+    more details to come 
+
+
+    References
+    ----------
+    * Alsing et al.(2020) 
+
+
+    Dev. Notes
+    ----------
+    '''
+    def __init__(self, name='nmfburst', cosmo=None): 
+        self.name = name # name of model 
+
+        super().__init__(name=name, cosmo=cosmo)
+
+    def sed(self, tt, zred, vdisp=0., wavelength=None, resolution=None,
+            filters=None, debug=False): 
+        ''' compute the redshifted spectral energy distribution (SED) for a given set of parameter values and redshift.
+       
+
+        Parameters
+        ----------
+        tt : array_like[Nsample,Nparam] 
+            Parameter values of emulator model
+            * For DESIemulator.name == 'nmfburst': [log M*, beta1_sfh,
+            beta2_sfh, beta3_sfh, beta4_sfh, fburst, tburst, gamma1_zh,
+            gamma2_zh, dust1, dust2, dust_index] 
+
+        zred : float or array_like
+            redshift of the SED 
+
+        vdisp : float or array_like
+            velocity dispersion  
+
+        wavelength : array_like[Nwave,]
+            If you want to use your own wavelength. If specified, the model
+            will interpolate the spectra to the specified wavelengths. By
+            default, it will use the speculator wavelength
+            (Default: None)  
+
+        resolution : array_like[N,Nwave]
+            resolution matrix (e.g. DESI data provides a resolution matrix)  
+    
+        filters : object
+            Photometric bandpass filter to generate photometry.
+            `speclite.FilterResponse` object. 
+
+        debug: boolean
+            If True, prints out a number lines to help debugging 
+
+
+        Returns
+        -------
+        outwave : [Nsample, Nwave]
+            output wavelengths in angstrom. 
+
+        outspec : [Nsample, Nwave]
+            the redshifted SED in units of 1e-17 * erg/s/cm^2/Angstrom.
+        '''
+        tt      = np.atleast_2d(tt)
+        zred    = np.atleast_1d(zred) 
+        vdisp   = np.atleast_1d(vdisp) 
+        ntheta  = tt.shape[1]
+
+        assert tt.shape[0] == zred.shape[0]
+       
+        outwave, outspec, maggies = [], [], [] 
+        for _tt, _zred in zip(tt, zred): 
+            # check redshift range
+            assert (_zred >= 0.) and (_zred < 0.5), "outside of 0.0 <z < 0.5"
+            assert np.isclose(np.sum(_tt[1:5]), 1.), "SFH basis coefficients should add up to 1"
+
+
+            if debug: 
+                print('emulator.sed: redshift = %f' % zred)
+                print('emulator.sed: tage = %f' % tage) 
+
+            # [parameters] + [zred] 
+            tt_arr = np.concatenate([_tt, [_zred]])
+            
+            # get SSP luminosity
+            ssp_log_lum = self._emulator(tt_arr[1:]) 
+
+            # mass normalization
+            lum_ssp = np.exp(tt_arr[0] * np.log(10) + ssp_log_lum)
+
+            # redshift the spectra
+            w_z = self._emu_waves * (1. + _zred)
+            d_lum = self._d_lum_z_interp(_zred) 
+            flux_z = lum_ssp * UT.Lsun() / (4. * np.pi * d_lum**2) / (1. + _zred) * 1e17 # 10^-17 ergs/s/cm^2/Ang
+            
+            # apply velocity dispersion 
+            wave_smooth, flux_smooth = self._apply_vdisp(w_z, flux_z, vdisp)
+            
+            if wavelength is None: 
+                outwave.append(wave_smooth)
+                outspec.append(flux_smooth)
+            else: 
+                outwave.append(wavelength)
+
+                # resample flux to input wavelength  
+                resampflux = UT.trapz_rebin(wave_smooth, flux_smooth, xnew=wavelength) 
+
+                if resolution is not None: 
+                    # apply resolution matrix 
+                    _i = 0 
+                    for res in np.atleast_1d(resolution):
+                        _res = UT.Resolution(res) 
+                        resampflux[_i:_i+res.shape[-1]] = _res.dot(resampflux[_i:_i+res.shape[-1]]) 
+                        _i += res.shape[-1]
+                outspec.append(resampflux) 
+
+            if filters is not None: 
+                # calculate photometry from SEDs 
+                _maggies = filters.get_ab_maggies(np.atleast_2d(flux_z) *
+                        1e-17*U.erg/U.s/U.cm**2/U.Angstrom, wavelength=w_z *
+                        U.Angstrom)
+                maggies.append(np.array(list(_maggies[0])) * 1e9)
+
+        if len(outwave) == 1: 
+            outwave = outwave[0] 
+            outspec = outspec[0] 
+            if filters is not None: maggies = maggies[0]
+        else: 
+            outwave = np.array(outwave)
+            outspec = np.array(outspec) 
+            if filters is not None: maggies = np.array(maggies)
+
+        if filters is None: 
+            return outwave, outspec
+        else: 
+            return outwave, outspec, maggies
+
+    def _emulator(self, tt):
+        ''' forward pass through the the three speculator NN wave bins to
+        predict SED 
+        
+        
+        Parameters
+        ----------
+        tt : array_like[Nparam,]
+            * For DESIemulator.name == 'nmfburst': 
+            [beta1_sfh, beta2_sfh, beta3_sfh, beta4_sfh, fburst, tburst, gamma1_zh, gamma2_zh, dust1, dust2, dust_index, tage] 
+    
+        Returns
+        -------
+        logflux : array_like[Nwave,] 
+            (natural) log of (SSP luminosity in units of Lsun/A)
+        '''
+        logflux = [] 
+        for iwave in range(self.n_emu): # wave bins
+
+            # forward pass through the network
+            act = []
+            offset = np.log(np.sum(tt[:4]))
+
+            layers = [(tt - self._emu_theta_mean[iwave])/self._emu_theta_std[iwave]]
+
+            for i in range(self._emu_n_layers[iwave]-1):
+           
+                # linear network operation
+                act.append(np.dot(layers[-1], self._emu_W[iwave][i]) + self._emu_b[iwave][i])
+
+                # pass through activation function
+                layers.append((self._emu_beta[iwave][i] + (1.-self._emu_beta[iwave][i]) * 1./(1.+np.exp(-self._emu_alpha[iwave][i]*act[-1])))*act[-1])
+
+            # final (linear) layer -> (normalized) PCA coefficients
+            layers.append(np.dot(layers[-1], self._emu_W[iwave][-1]) + self._emu_b[iwave][-1])
+
+            # rescale PCA coefficients, multiply out PCA basis -> normalized spectrum, shift and re-scale spectrum -> output spectrum
+            _logflux = np.dot(layers[-1]*self._emu_pca_std[iwave] + self._emu_pca_mean[iwave], self._emu_pcas[iwave]) * self._emu_spec_std[iwave] + self._emu_spec_mean[iwave] + offset
+            logflux.append(_logflux)
+
+        return np.concatenate(logflux) 
+
+    def _init_model(self, **kwargs): 
+        ''' initialize the Speculator model 
+        '''
+        if self.name == 'nmfburst': 
+            self._sps_parameters = [
+                    'logmstar', 
+                    'beta1_sfh', 
+                    'beta2_sfh', 
+                    'beta3_sfh',
+                    'beta4_sfh', 
+                    'fburst', 
+                    'tburst',   # lookback time of the universe when burst occurs (tburst < tage) 
+                    'gamma1_zh', 
+                    'gamma2_zh', 
+                    'dust1', 
+                    'dust2',
+                    'dust_index']
+            self._load_NMF_bases(name='tojeiro.4comp')
+            self._SFH   = self._SFH_nmfburst
+            self._ZH    = self._ZH_nmfburst 
+            self._load_model_params()
+        else: 
+            raise NotImplementedError
+        return None 
+
+    def _load_model_params(self): 
+        ''' read in pickle files that contains the parameters for the FSPS
+        emulator that is split into wavelength bins
+        '''
+        if self.name == 'nmfburst': 
+            npcas = [30, 60, 30, 30, 30, 30] # wavelength bins 
+            f_nn = lambda npca, i: 'fsps.nmfburst.seed0_499.6w%i.pca%i.10x256.nbatch250.pkl' % (i, npca)
+        
+        self.n_emu = len(npcas) # number of emulator 
+        self._emu_W             = []
+        self._emu_b             = []
+        self._emu_alpha         = []
+        self._emu_beta          = []
+        self._emu_pcas          = []
+        self._emu_pca_mean      = []
+        self._emu_pca_std       = []
+        self._emu_spec_mean     = []
+        self._emu_spec_std      = []
+        self._emu_theta_mean    = []
+        self._emu_theta_std     = []
+        self._emu_wave          = []
+
+        self._emu_n_layers = []
+
+        for i, npca in enumerate(npcas): 
+            fpkl = open(os.path.join(
+                os.path.dirname(os.path.realpath(__file__)), 'dat', 
+                f_nn(npca, i)), 'rb')
+            params = pickle.load(fpkl)
+            fpkl.close()
+
+            self._emu_W.append(params[0])
+            self._emu_b.append(params[1])
+            self._emu_alpha.append(params[2])
+            self._emu_beta.append(params[3])
+            self._emu_theta_mean.append(params[4])
+            self._emu_theta_std.append(params[5])
+            self._emu_pca_mean.append(params[6])
+            self._emu_pca_std.append(params[7])
+            self._emu_spec_mean.append(params[8])
+            self._emu_spec_std.append(params[9])
+            self._emu_pcas.append(params[10])
+            self._emu_wave.append(params[13])
+
+            self._emu_n_layers.append(params[16]) # number of network layers
+
+        self._emu_waves = np.concatenate(self._emu_wave) 
+        return None 
 
 
 class DESIspeculator(Model): 
