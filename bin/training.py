@@ -138,8 +138,8 @@ def fsps_burst_prior_samples(ibatch, ncpu=1):
     
     # sample prior for burst then fit it into nmfburst theta  
     _thetas = np.array([priors.sample() for i in range(nspec)])
-    thetas = np.zeros((12, nspec))
-    thetas[:,5:] = _thetas 
+    thetas = np.zeros((nspec, 12))
+    thetas[:,6:] = _thetas 
 
     # load SPS model  
     Msps = Models.FSPS_NMF(name='nmfburst')
@@ -193,7 +193,6 @@ def fsps_burst_prior_samples(ibatch, ncpu=1):
     return None 
 
 
-
 if __name__=='__main__': 
     mp.freeze_support()
     name    = sys.argv[1]
@@ -203,4 +202,4 @@ if __name__=='__main__':
     if name != 'burst': 
         fsps_prior_samples(name, ibatch, ncpu=ncpu)
     else: 
-        fsps_burst_prior_samples(name, ibatch, ncpu=cpu) 
+        fsps_burst_prior_samples(ibatch, ncpu=ncpu) 
