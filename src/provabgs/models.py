@@ -640,6 +640,7 @@ class FSPS_NMF(FSPS):
         to the burst. This spectrum is normalized such that the total formed
         mass is 1 Msun, **not** fburst 
         '''
+        if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
         tt_zh           = tt[self._i_zh_nmf - 1]
         fburst, tburst  = tt[self._i_sfh_burst - 1]
         dust1           = tt[-4]
