@@ -58,22 +58,47 @@ def prior_nmfburst():
 def fsps_prior_samples(name, ibatch, ncpu=1): 
     ''' run FSPS SPS model and get composite stellar population luminosity.
     '''
-    np.random.seed(ibatch) 
+    if ibatch == 'test': 
+        np.random.seed(123456) 
+        nspec = 100000 # batch size 
+    else: 
+        np.random.seed(ibatch) 
+        nspec = 10000 # batch size 
 
     # load priors 
-    if name in ['nmf_bases', 'nmf_tng4']: 
+    if name == 'nmf_bases': 
         priors = prior_nmf(4)
     elif name == 'nmfburst': 
         priors = prior_nmfburst() 
 
-    nspec = 10000 # batch size 
+    dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
+    if ibatch == 'test': 
+        ftheta = os.path.join(dat_dir,
+                'fsps.%s.theta.test.npy' % name) 
+        fspectrum = os.path.join(dat_dir, 
+                'fsps.%s.lnspectrum.test.npy' % name) 
+    else: 
+        ftheta = os.path.join(dat_dir,
+                'fsps.%s.theta.seed%i.npy' % (name, ibatch)) 
+        fspectrum = os.path.join(dat_dir, 
+                'fsps.%s.lnspectrum.seed%i.npy' % (name, ibatch)) 
+
+    if os.path.isfile(ftheta) and os.path.isfile(fspectrum): 
+        print() 
+        print('--- batch %s already exists ---' % str(ibatch))
+        print('--- do not overwrite ---')
+        print()  
+        return None 
     
     # sample prior and transform 
     _thetas = np.array([priors.sample() for i in range(nspec)])
     thetas = priors.transform(_thetas) 
 
     # load SPS model  
-    Msps = Models.FSPS(name=name)
+    if name == 'nmf_bases':
+        Msps = Models.FSPS_NMF(name='nmf')
+    else: 
+        Msps = Models.FSPS_NMF(name=name)
     w_fsps, _ = Msps._fsps_nmf(thetas[0]) 
 
     # wavelength range set to cover the DESI spectra and photometric filter
@@ -81,46 +106,32 @@ def fsps_prior_samples(name, ibatch, ncpu=1):
     wmin, wmax = 2300., 11030.
     wlim = (w_fsps >= wmin) & (w_fsps <= wmax)
 
-    dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
-
     fwave = os.path.join(dat_dir, 'wave_fsps.npy')
     if not os.path.isfile(fwave): # save FSPS wavelength if not saved 
         np.save(fwave, w_fsps[wlim])
+    
+    print()  
+    print('--- batch %s ---' % str(ibatch))
+    # save parameters sampled from prior 
+    print('  saving thetas to %s' % ftheta)
+    np.save(ftheta, thetas)
 
-    ftheta = os.path.join(dat_dir,
-            'fsps.%s.theta.seed%i.npy' % (name, ibatch)) 
-    fspectrum = os.path.join(dat_dir, 
-            'fsps.%s.lnspectrum.seed%i.npy' % (name, ibatch)) 
-
-    if os.path.isfile(ftheta) and os.path.isfile(fspectrum): 
-        print() 
-        print('--- batch %i already exists ---' % ibatch)
-        print('--- do not overwrite ---' % ibatch)
-        print()  
-        return None 
+    if (ncpu == 1): # run on serial 
+        logspectra = []
+        for _theta in thetas:
+            _, _spectrum = Msps._fsps_nmf(_theta)
+            logspectra.append(np.log(_spectrum[wlim]))
     else: 
-        print()  
-        print('--- batch %i ---' % ibatch)
-        # save parameters sampled from prior 
-        print('  saving thetas to %s' % ftheta)
-        np.save(ftheta, thetas)
+        def _fsps_model_wrapper(theta):
+            _, _spectrum = Msps._fsps_nmf(theta)
+            return np.log(_spectrum[wlim]) 
 
-        if (ncpu == 1): # run on serial 
-            logspectra = []
-            for _theta in thetas:
-                _, _spectrum = Msps._fsps_nmf(_theta)
-                logspectra.append(np.log(_spectrum[wlim]))
-        else: 
-            def _fsps_model_wrapper(theta):
-                _, _spectrum = Msps._fsps_nmf(theta)
-                return np.log(_spectrum[wlim]) 
+        pewl = mp.Pool(ncpu) 
+        logspectra = pewl.map(_fsps_model_wrapper, thetas) 
 
-            pewl = mp.Pool(ncpu) 
-            logspectra = pewl.map(_fsps_model_wrapper, thetas) 
-
-        print('  saving ln(spectra) to %s' % fspectrum)
-        np.save(fspectrum, np.array(logspectra))
-        print()  
+    print('  saving ln(spectra) to %s' % fspectrum)
+    np.save(fspectrum, np.array(logspectra))
+    print()  
     return None 
 
 
@@ -128,18 +139,36 @@ def fsps_burst_prior_samples(ibatch, ncpu=1):
     ''' run FSPS SPS model and get stellar population luminosity for a single
     burst. This is to build a separate emulator for the burst component 
     '''
-    np.random.seed(ibatch) 
+    if ibatch == 'test': 
+        np.random.seed(123456) 
+        nspec = 100000 # batch size 
+    else: 
+        np.random.seed(ibatch) 
+        nspec = 10000 # batch size 
 
     # load priors 
     name = 'burst'
     priors = prior_burst() 
 
-    nspec = 10000 # batch size 
+    dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
+    if ibatch == 'test': 
+        ftheta = os.path.join(dat_dir, 'fsps.%s.theta.test.npy' % name) 
+        fspectrum = os.path.join(dat_dir, 'fsps.%s.lnspectrum.test.npy' % name) 
+    else: 
+        ftheta = os.path.join(dat_dir,
+                'fsps.%s.theta.seed%i.npy' % (name, ibatch)) 
+        fspectrum = os.path.join(dat_dir, 
+                'fsps.%s.lnspectrum.seed%i.npy' % (name, ibatch)) 
+
+    if os.path.isfile(ftheta) and os.path.isfile(fspectrum): 
+        print() 
+        print('--- batch %s already exists ---' % str(ibatch))
+        print('--- do not overwrite ---')
+        print()  
+        return None 
     
     # sample prior for burst then fit it into nmfburst theta  
-    _thetas = np.array([priors.sample() for i in range(nspec)])
-    thetas = np.zeros((nspec, 12))
-    thetas[:,6:] = _thetas 
+    thetas = np.array([priors.sample() for i in range(nspec)])
 
     # load SPS model  
     Msps = Models.FSPS_NMF(name='nmfburst')
@@ -150,53 +179,43 @@ def fsps_burst_prior_samples(ibatch, ncpu=1):
     wmin, wmax = 2300., 11030.
     wlim = (w_fsps >= wmin) & (w_fsps <= wmax)
 
-    dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
 
     fwave = os.path.join(dat_dir, 'wave_fsps.npy')
     if not os.path.isfile(fwave): # save FSPS wavelength if not saved 
         np.save(fwave, w_fsps[wlim])
 
-    ftheta = os.path.join(dat_dir,
-            'fsps.%s.theta.seed%i.npy' % (name, ibatch)) 
-    fspectrum = os.path.join(dat_dir, 
-            'fsps.%s.lnspectrum.seed%i.npy' % (name, ibatch)) 
+    print()  
+    print('--- batch %s ---' % str(ibatch)) 
+    # save parameters sampled from prior 
+    print('  saving thetas to %s' % ftheta)
+    np.save(ftheta, thetas)
 
-    if os.path.isfile(ftheta) and os.path.isfile(fspectrum): 
-        print() 
-        print('--- batch %i already exists ---' % ibatch)
-        print('--- do not overwrite ---' % ibatch)
-        print()  
-        return None 
+    if (ncpu == 1): # run on serial 
+        logspectra = []
+        for _theta in thetas:
+            _, _spectrum = Msps._fsps_burst(_theta)
+            logspectra.append(np.log(_spectrum[wlim]))
     else: 
-        print()  
-        print('--- batch %i ---' % ibatch)
-        # save parameters sampled from prior 
-        print('  saving thetas to %s' % ftheta)
-        np.save(ftheta, thetas)
+        def _fsps_model_wrapper(theta):
+            _, _spectrum = Msps._fsps_burst(theta)
+            return np.log(_spectrum[wlim]) 
 
-        if (ncpu == 1): # run on serial 
-            logspectra = []
-            for _theta in thetas:
-                _, _spectrum = Msps._fsps_burst(_theta)
-                logspectra.append(np.log(_spectrum[wlim]))
-        else: 
-            def _fsps_model_wrapper(theta):
-                _, _spectrum = Msps._fsps_burst(theta)
-                return np.log(_spectrum[wlim]) 
+        pewl = mp.Pool(ncpu) 
+        logspectra = pewl.map(_fsps_model_wrapper, thetas) 
 
-            pewl = mp.Pool(ncpu) 
-            logspectra = pewl.map(_fsps_model_wrapper, thetas) 
-
-        print('  saving ln(spectra) to %s' % fspectrum)
-        np.save(fspectrum, np.array(logspectra))
-        print()  
+    print('  saving ln(spectra) to %s' % fspectrum)
+    np.save(fspectrum, np.array(logspectra))
+    print()  
     return None 
 
 
 if __name__=='__main__': 
     mp.freeze_support()
     name    = sys.argv[1]
-    ibatch  = int(sys.argv[2]) 
+    try: 
+        ibatch = int(sys.argv[2]) 
+    except ValueError: 
+        ibatch = sys.argv[2]
     ncpu    = int(sys.argv[3]) 
     
     if name != 'burst': 
