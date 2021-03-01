@@ -115,6 +115,9 @@ def train_pca_3wavebins(name, batch0, batch1, n_pca, i_bin):
     elif name == 'nmfburst': 
         # theta = [b1, b2, b3, b4, fburst, tburst, g1, g2, dust1, dust2, dust_index, zred]
         n_param = 12 
+    elif name == 'burst': 
+        n_param = 6
+
     n_wave = np.sum(wave_bin) 
     
     # train PCA basis 
@@ -129,11 +132,11 @@ def train_pca_3wavebins(name, batch0, batch1, n_pca, i_bin):
     PCABasis.compute_spectrum_parameters_shift_and_scale() # computes shifts and scales for (log) spectra and parameters
     PCABasis.train_pca()
     PCABasis.transform_and_stack_training_data(
-            os.path.join(dat_dir, 'fsps.%s.seed%i_%i.w%i.pca%i' % (name, batch0, batch1, i_bin, n_pca)), 
+            os.path.join(dat_dir, 'fsps.%s.seed%i_%i.3w%i.pca%i' % (name, batch0, batch1, i_bin, n_pca)), 
             retain=True) 
     # save to file 
     PCABasis._save_to_file(
-            os.path.join(dat_dir, 'fsps.%s.seed%i_%i.w%i.pca%i.hdf5' % (name, batch0, batch1, i_bin, n_pca))
+            os.path.join(dat_dir, 'fsps.%s.seed%i_%i.3w%i.pca%i.hdf5' % (name, batch0, batch1, i_bin, n_pca))
             )
     return None 
 
