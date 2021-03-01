@@ -151,6 +151,8 @@ def fsps_burst_prior_samples(ibatch, ncpu=1):
     wlim = (w_fsps >= wmin) & (w_fsps <= wmax)
 
     dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
+    if os.environ['machine'] == 'tiger': 
+        dat_dir='/tigress/chhahn/provabgs/'
 
     fwave = os.path.join(dat_dir, 'wave_fsps.npy')
     if not os.path.isfile(fwave): # save FSPS wavelength if not saved 
