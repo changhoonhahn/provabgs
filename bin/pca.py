@@ -9,9 +9,12 @@ import numpy as np
 # --- speculator ---
 from speculator import SpectrumPCA
 
-
-#dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
-dat_dir='/tigress/chhahn/provabgs/'
+if os.environ['machine'] == 'cori': 
+    dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
+elif os.environ['machine'] == 'tiger': 
+    dat_dir='/tigress/chhahn/provabgs/'
+else: 
+    raise ValueError
 
 
 def divide_trainingset_3wavebins(name, batch0, batch1): 
@@ -20,6 +23,9 @@ def divide_trainingset_3wavebins(name, batch0, batch1):
       2. 4500 < wave < 6500
       3. 6500 < wave 
     '''
+    if name == 'burst': 
+        dat_dir='/global/cscratch1/sd/chahah/_burst_tmp/'
+
     # fsps wavelength 
     fwave   = os.path.join(dat_dir, 'wave_fsps.npy') 
     wave    = np.load(fwave)
@@ -87,6 +93,7 @@ def train_pca_3wavebins(name, batch0, batch1, n_pca, i_bin):
       3. 6500 < wave 
 
     '''
+    dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
     # fsps wavelength 
     fwave   = os.path.join(dat_dir, 'wave_fsps.npy') 
     wave    = np.load(fwave)
@@ -95,6 +102,7 @@ def train_pca_3wavebins(name, batch0, batch1, n_pca, i_bin):
     wave_bin1 = (wave >= 4500) & (wave < 6500) 
     wave_bin2 = (wave >= 6500) 
 
+    dat_dir='/global/cscratch1/sd/chahah/_burst_tmp/'
     # batches of fsps spectra
     batches = range(batch0, batch1+1)
     
