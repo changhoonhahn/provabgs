@@ -93,7 +93,10 @@ def train_pca_3wavebins(name, batch0, batch1, n_pca, i_bin):
       3. 6500 < wave 
 
     '''
-    dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
+    if os.environ['machine'] == 'cori': 
+        dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
+    elif os.environ['machine'] == 'tiger': 
+        dat_dir='/tigress/chhahn/provabgs/'
     # fsps wavelength 
     fwave   = os.path.join(dat_dir, 'wave_fsps.npy') 
     wave    = np.load(fwave)
@@ -102,7 +105,8 @@ def train_pca_3wavebins(name, batch0, batch1, n_pca, i_bin):
     wave_bin1 = (wave >= 4500) & (wave < 6500) 
     wave_bin2 = (wave >= 6500) 
 
-    dat_dir='/global/cscratch1/sd/chahah/_burst_tmp/'
+    if os.environ['machine'] == 'cori': 
+        dat_dir='/global/cscratch1/sd/chahah/_burst_tmp/'
     # batches of fsps spectra
     batches = range(batch0, batch1+1)
     

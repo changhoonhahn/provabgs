@@ -17,37 +17,48 @@ import matplotlib.pyplot as plt
 #-------------------------------------------------------
 # input 
 #-------------------------------------------------------
-model = 'nmfburst'
+#model = 'nmfburst'
+#n_pcas  = [30, 60, 30, 30, 30, 30] # number of PCA components 
+#archs = ['16x256', '16x256', '16x256', '16x256', '16x256', '16x256'] # architectures
+
+model = 'nmf_bases'
+n_pcas = [50, 30, 30]
+archs = ['8x256', '8x256', '8x256'] # architectures
+#n_pcas = [30, 30, 30, 30, 30, 30]
+#archs = ['10x256', '10x256', '10x256', '10x256', '10x256', '10x256'] # architectures
+
+#model = 'burst'
+#n_pcas = [50, 30, 30]
+#archs = ['5x256', '5x256', '5x256'] # architectures
+
 nbatch = 500 
-n_pcas  = [30, 60, 30, 30, 30, 30] # number of PCA components 
-archs = ['10x256', '10x256', '10x256', '10x256', '10x256', '10x256'] # architectures
 desc = 'nbatch250'
 #dat_dir = '/Users/chahah/data/provabgs/'
 dat_dir = '/tigress/chhahn/provabgs/'
 
-# number of parameters
-if model == 'nmf_bases':
-    n_param = 10 
-elif model == 'nmfburst': 
-    n_param = 12 
-
-
 # read in wavelenght values 
 wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy'))
 
-wave_bins = [ 
-        (wave < 3000),
-        (wave >= 3000) & (wave < 4000),
-        (wave >= 4000) & (wave < 5000),
-        (wave >= 5000) & (wave < 6000), 
-        (wave >= 6000) & (wave < 7000),
-        (wave >= 7000)]
+n_wavebin = len(n_pcas)
+if n_wavebin == 6: 
+    wave_bins = [ 
+            (wave < 3000),
+            (wave >= 3000) & (wave < 4000),
+            (wave >= 4000) & (wave < 5000),
+            (wave >= 5000) & (wave < 6000), 
+            (wave >= 6000) & (wave < 7000),
+            (wave >= 7000)]
+elif n_wavebin == 3: 
+    wave_bins = [
+            (wave < 4500), 
+            (wave >= 4500) & (wave < 6500),
+            (wave >= 6500)]
 
 
 # plot loss 
 losses = [
         np.loadtxt(os.path.join(dat_dir,
-            'fsps.%s.seed0_%i.6w%i.pca%i.%s.%s.loss.dat' % (model, nbatch-1, i, n_pcas[i], archs[i], desc)))
+            'fsps.%s.seed0_%i.%iw%i.pca%i.%s.%s.loss.dat' % (model, nbatch-1, n_wavebin, i, n_pcas[i], archs[i], desc)))
             for i in range(len(wave_bins))
         ]
 
@@ -85,8 +96,8 @@ emus = [
         Speculator(
             restore=True, 
             restore_filename=os.path.join(dat_dir, 
-                'fsps.%s.seed0_%i.6w%i.pca%i.%s.%s' % 
-                (model, nbatch-1, i, n_pcas[i], archs[i], desc))
+                'fsps.%s.seed0_%i.%iw%i.pca%i.%s.%s' % 
+                (model, nbatch-1, n_wavebin, i, n_pcas[i], archs[i], desc))
             )
         for i in range(len(wave_bins))
         ]
@@ -128,8 +139,9 @@ sub.set_ylabel(r'$(f_{\rm emu} - f_{\rm fsps})/f_{\rm fsps}$', fontsize=25)
 sub.set_ylim(-0.1, 0.1) 
 fig.savefig('fsps.%s.%s.%s.%s.valid_emu.png' % (model, '_'.join(str(nn) for nn in n_pcas), '.'.join(archs), desc), bbox_inches='tight') 
 
+
 # plot cumulative fractional error
-mean_frac_dspectrum = np.mean(np.abs(1. - np.exp(lnspec_recon - lnspec_test)), axis=1)
+mean_frac_dspectrum = np.mean(np.abs(frac_dspectrum), axis=1)
 quant = np.quantile(mean_frac_dspectrum, [0.68, 0.95, 0.99, 0.999])
 
 fig = plt.figure(figsize=(8,6))
@@ -142,3 +154,15 @@ sub.set_xlim(0., 0.03)
 sub.set_ylabel('cumulative distribution', fontsize=20)
 sub.set_ylim(0., 1.)
 fig.savefig('fsps.%s.%s.%s.%s.valid_emu.cum.png' % (model, '_'.join(str(nn) for nn in n_pcas), '.'.join(archs), desc), bbox_inches='tight') 
+
+outlier = mean_frac_dspectrum > 0.1
+print('%i with frac err > 0.1' % np.sum(outlier))
+# plot outliers 
+fig = plt.figure(figsize=(15,5))
+sub = fig.add_subplot(111)
+for i in range(np.sum(outlier)): 
+    sub.plot(_wave, np.exp(lnspec_test[outlier][i]))
+    sub.plot(_wave, np.exp(lnspec_recon[outlier][i]), c='k', ls=':')
+sub.set_xlabel('wavelength ($A$)', fontsize=25) 
+sub.set_xlim(2.3e3, 1e4) 
+fig.savefig('fsps.%s.%s.%s.%s.outlier.png' % (model, '_'.join(str(nn) for nn in n_pcas), '.'.join(archs), desc), bbox_inches='tight') 

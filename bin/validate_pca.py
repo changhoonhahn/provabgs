@@ -8,20 +8,26 @@ import matplotlib as mpl
 mpl.use('Agg') 
 import matplotlib.pyplot as plt
 
+model = 'burst' 
+n_pcas = [50, 30, 30] 
 
-#model = 'nmf_bases'
-model = 'nmfburst'
+model = 'nmf_bases'
+n_pcas = [50, 30, 30] 
+#n_pcas  = [30, 30, 30, 30, 30, 30]
 
-# number of PCA components 
-n_pcas  = [30, 60, 30, 30, 30, 30]
+#model = 'nmfburst'
+#n_pcas  = [30, 60, 30, 30, 30, 30]
 
 # number of parameters
 if model == 'nmf_bases':
     n_param = 10 
 elif model == 'nmfburst': 
     n_param = 12 
+elif model == 'burst':
+    n_param = 6 
+else: 
+    raise ValueError
 
-#dat_dir = '/Users/chahah/data/provabgs/'
 dat_dir='/tigress/chhahn/provabgs/'
 if 'NERSC_HOST' in os.environ: 
     dat_dir = '/global/cscratch1/sd/chahah/provabgs/'
@@ -29,14 +35,19 @@ if 'NERSC_HOST' in os.environ:
 # read in wavelenght values 
 wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy'))
 
-wave_bins = [
-        (wave < 3000),
-        (wave >= 3000) & (wave < 4000),
-        (wave >= 4000) & (wave < 5000),
-        (wave >= 5000) & (wave < 6000),
-        (wave >= 6000) & (wave < 7000),
-        (wave >= 7000)]
-
+if len(n_pcas) == 6: 
+    wave_bins = [
+            (wave < 3000),
+            (wave >= 3000) & (wave < 4000),
+            (wave >= 4000) & (wave < 5000),
+            (wave >= 5000) & (wave < 6000),
+            (wave >= 6000) & (wave < 7000),
+            (wave >= 7000)]
+elif len(n_pcas) == 3: 
+    wave_bins = [
+            (wave < 4500), 
+            (wave >= 4500) & (wave < 6500),
+            (wave >= 6500)]
 
 # read in SpectrumPCA objects
 PCABases = []
@@ -52,14 +63,12 @@ for i in range(len(n_pcas)):
             parameter_selection=None) # pass an optional function that takes in parameter vector(s) and returns True/False for any extra parameter cuts we want to impose on the training sample (eg we may want to restrict the parameter ranges)
 
     fpca = os.path.join(dat_dir, 
-            'fsps.%s.seed0_499.6w%i.pca%i.hdf5' % (model, i, n_pcas[i]))
+            'fsps.%s.seed0_499.%iw%i.pca%i.hdf5' % (model, len(n_pcas), i, n_pcas[i]))
     PCABasis._load_from_file(fpca) 
     PCABases.append(PCABasis)
 
 
 # read in test parameters and data
-theta_test      = np.load(os.path.join(dat_dir,
-    'fsps.%s.theta.test.npy' % model))
 lnspec_test    = np.load(os.path.join(dat_dir, 
     'fsps.%s.lnspectrum.test.npy' % model))
 
@@ -80,6 +89,7 @@ lnspec_recon = np.concatenate(lnspec_recon, axis=1)
 
 # plot the fraction error 
 frac_dspectrum = 1. - np.exp(lnspec_recon - lnspec_test) 
+print(frac_dspectrum)
 frac_dspectrum_quantiles = np.nanquantile(frac_dspectrum, 
         [0.0005, 0.005, 0.025, 0.5, 0.975, 0.995, 0.9995], axis=0)
 

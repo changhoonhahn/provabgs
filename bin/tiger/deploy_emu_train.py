@@ -7,7 +7,7 @@ import os, sys
 
 
 
-def deploy_emu_train(model, nbatch, i_wave, n_pcas, Nlayer, Nunits, b_size):
+def deploy_emu_train(model, nbatch, N_wave, i_wave, n_pcas, Nlayer, Nunits, b_size):
     ''' create slurm script for training speculator and then submit 
     '''
     cntnt = '\n'.join(["#!/bin/bash", 
@@ -29,7 +29,7 @@ def deploy_emu_train(model, nbatch, i_wave, n_pcas, Nlayer, Nunits, b_size):
         "module load anaconda3", 
         "conda activate tf2-gpu", 
         "",
-        "python /home/chhahn/projects/provabgs/bin/emulator.py %s %i %i %i %i %i %i" % (model, nbatch, i_wave, n_pcas, Nlayer, Nunits, b_size),
+        "python /home/chhahn/projects/provabgs/bin/emulator.py %s %i %i %i %i %i %i %i" % (model, nbatch, N_wave, i_wave, n_pcas, Nlayer, Nunits, b_size),
         'now=$(date +"%T")', 
         'echo "end time ... $now"', 
         ""]) 
@@ -44,9 +44,10 @@ def deploy_emu_train(model, nbatch, i_wave, n_pcas, Nlayer, Nunits, b_size):
 
 model = sys.argv[1]
 nbatch = int(sys.argv[2])
-i_wave = int(sys.argv[3]) 
-n_pcas = int(sys.argv[4]) 
-Nlayer = int(sys.argv[5]) 
-Nunits = int(sys.argv[6]) 
-b_size = int(sys.argv[7])
-deploy_emu_train(model, nbatch, i_wave, n_pcas,  Nlayer, Nunits, b_size)
+N_wave = int(sys.argv[3])
+i_wave = int(sys.argv[4]) 
+n_pcas = int(sys.argv[5]) 
+Nlayer = int(sys.argv[6]) 
+Nunits = int(sys.argv[7]) 
+b_size = int(sys.argv[8])
+deploy_emu_train(model, nbatch, N_wave, i_wave, n_pcas,  Nlayer, Nunits, b_size)
