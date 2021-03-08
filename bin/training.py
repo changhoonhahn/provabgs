@@ -176,9 +176,10 @@ def fsps_burst_prior_samples(ibatch, ncpu=1):
     
     # sample prior for burst then fit it into nmfburst theta  
     thetas = np.array([priors.sample() for i in range(nspec)])
+    thetas = np.concatenate([np.zeros((nspec, 6)), thetas], axis=1) 
 
     # load SPS model  
-    Msps = Models.FSPS_NMF(name='nmfburst')
+    Msps = Models.NMF(burst=True, emulator=False)
     w_fsps, _ = Msps._fsps_burst(thetas[0]) 
 
     # wavelength range set to cover the DESI spectra and photometric filter
