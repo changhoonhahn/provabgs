@@ -701,6 +701,7 @@ class NMF(Model):
         to the burst. This spectrum is normalized such that the total formed
         mass is 1 Msun, **not** fburst 
         '''
+        if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
         theta = self._parse_theta(tt) 
         tt_zh = np.array([theta['gamma1_zh'], theta['gamma2_zh']])
 
@@ -712,7 +713,8 @@ class NMF(Model):
         dust_index      = theta['dust_index']
 
         # get metallicity at tburst 
-        zburst = np.sum(np.array([tt_zh[i] * self._zh_basis[i](tburst) for i in range(self._N_nmf_zh)]))
+        zburst = np.sum(np.array([tt_zh[i] * self._zh_basis[i](tburst) 
+            for i in range(self._N_nmf_zh)]))
     
         # luminosity of SSP at tburst 
         self._ssp.params['logzsol'] = np.log10(zburst/0.0190) # log(Z/Zsun)
