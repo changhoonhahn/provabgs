@@ -149,10 +149,11 @@ def fsps_burst_prior_samples(ibatch, ncpu=1):
     # load priors 
     name = 'burst'
     priors = prior_burst() 
-
-    dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
-    if os.environ['machine'] == 'tiger': 
+    
+    if os.environ['machine'] in ['della', 'tiger']: 
         dat_dir='/tigress/chhahn/provabgs/'
+    else: 
+        dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
 
     fwave = os.path.join(dat_dir, 'wave_fsps.npy')
     if not os.path.isfile(fwave): # save FSPS wavelength if not saved 
@@ -200,6 +201,7 @@ def fsps_burst_prior_samples(ibatch, ncpu=1):
             logspectra.append(np.log(_spectrum[wlim]))
     else: 
         def _fsps_model_wrapper(theta):
+            print(theta)
             _, _spectrum = Msps._fsps_burst(theta)
             return np.log(_spectrum[wlim]) 
 
