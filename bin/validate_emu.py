@@ -21,15 +21,15 @@ import matplotlib.pyplot as plt
 #n_pcas  = [30, 60, 30, 30, 30, 30] # number of PCA components 
 #archs = ['16x256', '16x256', '16x256', '16x256', '16x256', '16x256'] # architectures
 
-model = 'nmf_bases'
-n_pcas = [50, 30, 30]
-archs = ['8x256', '8x256', '8x256'] # architectures
+#model = 'nmf_bases'
+#n_pcas = [50, 30, 30]
+#archs = ['8x256', '8x256', '8x256'] # architectures
 #n_pcas = [30, 30, 30, 30, 30, 30]
 #archs = ['10x256', '10x256', '10x256', '10x256', '10x256', '10x256'] # architectures
 
-#model = 'burst'
-#n_pcas = [50, 30, 30]
-#archs = ['5x256', '5x256', '5x256'] # architectures
+model = 'burst'
+n_pcas = [50, 30, 30]
+archs = ['8x256', '8x256', '8x256'] # architectures
 
 nbatch = 500 
 desc = 'nbatch250'
@@ -80,6 +80,8 @@ theta_test      = np.load(os.path.join(dat_dir,
     'fsps.%s.theta.test.npy' % model)).astype(np.float32)
 _lnspec_test    = np.load(os.path.join(dat_dir, 
     'fsps.%s.lnspectrum.test.npy' % model))
+
+print(theta_test.shape)
 
 lnspec_test = []
 for wave_bin in wave_bins: 
