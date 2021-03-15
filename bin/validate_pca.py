@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 model = 'burst' 
 n_pcas = [50, 30, 30] 
 
-model = 'nmf_bases'
-n_pcas = [50, 30, 30] 
+#model = 'nmf_bases'
+#n_pcas = [50, 30, 30] 
 #n_pcas  = [30, 30, 30, 30, 30, 30]
 
 #model = 'nmfburst'
@@ -61,16 +61,19 @@ for i in range(len(n_pcas)):
             spectrum_filenames=None,  # list of filenames containing the (un-normalized) log spectra for training the PCA
             parameter_filenames=[], # list of filenames containing the corresponding parameter values
             parameter_selection=None) # pass an optional function that takes in parameter vector(s) and returns True/False for any extra parameter cuts we want to impose on the training sample (eg we may want to restrict the parameter ranges)
-
+    
     fpca = os.path.join(dat_dir, 
             'fsps.%s.seed0_499.%iw%i.pca%i.hdf5' % (model, len(n_pcas), i, n_pcas[i]))
+    print('  loading %s' % fpca)
     PCABasis._load_from_file(fpca) 
     PCABases.append(PCABasis)
 
 
 # read in test parameters and data
-lnspec_test    = np.load(os.path.join(dat_dir, 
-    'fsps.%s.lnspectrum.test.npy' % model))
+ftest = os.path.join(dat_dir, 'fsps.%s.lnspectrum.test.npy' % model)
+lnspec_test    = np.load(ftest)
+print('loading ... %s' % ftest) 
+
 
 # calculate PCA reconstructed spectra for test set 
 lnspec_recon = []
@@ -85,11 +88,15 @@ for i in range(len(wave_bins)):
         PCABases[i].spectrum_shift)
 
 lnspec_recon = np.concatenate(lnspec_recon, axis=1)
+for i in range(5): 
+    print(lnspec_recon[i,::1000])
+    print(lnspec_test[i,::1000])
+    print()
 
 
 # plot the fraction error 
 frac_dspectrum = 1. - np.exp(lnspec_recon - lnspec_test) 
-print(frac_dspectrum)
+print(frac_dspectrum[::1000])
 frac_dspectrum_quantiles = np.nanquantile(frac_dspectrum, 
         [0.0005, 0.005, 0.025, 0.5, 0.975, 0.995, 0.9995], axis=0)
 
