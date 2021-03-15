@@ -7,7 +7,9 @@ module for sps models
 '''
 import os 
 import h5py 
+import fsps
 import pickle
+import warnings
 import numpy as np 
 from scipy.stats import sigmaclip
 from scipy.special import gammainc
@@ -37,6 +39,8 @@ class Model(object):
 
         self._tage_z_interp = \
                 Interp.InterpolatedUnivariateSpline(_z, _tage, k=3)
+        self._z_tage_interp = \
+                Interp.InterpolatedUnivariateSpline(_tage[::-1], _z[::-1], k=3)
         self._d_lum_z_interp = \
                 Interp.InterpolatedUnivariateSpline(_z, _d_lum_cm, k=3)
     
@@ -97,7 +101,7 @@ class Model(object):
 
             # get SSP luminosity
             wave_rest, lum_ssp = self._sps_model(_tt, _tage)
-            if debug: print('Model.sed: ssp lum', ssp_lum)
+            if debug: print('Model.sed: ssp lum', lum_ssp)
 
             # redshift the spectra
             w_z = wave_rest * (1. + _zred)
@@ -571,8 +575,6 @@ class Tau(Model):
     def _ssp_initiate(self): 
         ''' initialize sps (FSPS StellarPopulaiton object) 
         '''
-        import fsps
-        
         # tau or delayed tau model
         if not self._delayed: sfh = 1 
         else: sfh = 4 
@@ -615,6 +617,68 @@ class NMF(Model):
         self._emulator = emulator 
         super().__init__(cosmo=cosmo) # initializes the model
 
+    def _emu(self, tt, tage): 
+        ''' FSPS emulator model using NMF SFH and ZH bases with the optional
+        starburst 
+
+        Parameters 
+        ----------
+        tt : 1d array 
+            Nparam array that specifies the parameter values 
+
+        tage : float 
+            age of galaxy 
+        
+        Returns
+        -------
+        wave_rest : array_like[Nwave] 
+            rest-frame wavelength of SSP flux 
+
+        lum_ssp : array_like[Nwave] 
+            FSPS SSP luminosity in units of Lsun/A
+    
+        to-do
+        -----
+        * replace redshift dependence of emulator to tage for consistency
+        '''
+        if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
+        theta = self._parse_theta(tt) 
+        
+        assert np.isclose(np.sum([theta['beta1_sfh'], theta['beta2_sfh'],
+            theta['beta3_sfh'], theta['beta4_sfh']]), 1.), "SFH basis coefficients should add up to 1"
+    
+        # get redshift with interpolation 
+        zred = self._z_tage_interp(tage) 
+    
+        tt_nmf = np.concatenate([theta['beta1_sfh'], theta['beta2_sfh'],
+            theta['beta3_sfh'], theta['beta4_sfh'], theta['gamma1_zh'],
+            theta['gamma2_zh'], theta['dust1'], theta['dust2'],
+            theta['dust_index'], [zred]])
+
+        # NMF from emulator 
+        lum_ssp = np.exp(self._emu_nmf(tt_nmf)) 
+    
+        # add burst contribution 
+        if self._burst: 
+            fburst = theta['fburst']
+            tburst = theta['tburst'] 
+
+            lum_burst = np.zeros(lum_ssp.shape)
+            # if starburst is within the age of the galaxy 
+            if tburst < tage and fburst > 0.: 
+                lum_burst = np.exp(self._emu_burst(tt)) 
+
+            # renormalize NMF contribution  
+            lum_ssp *= (1. - fburst) 
+
+            # add in burst contribution 
+            lum_ssp += fburst * lum_burst
+
+        # normalize by stellar mass 
+        lum_ssp *= (10**theta['logmstar'])
+
+        return self._nmf_emu_waves, lum_ssp
+
     def _fsps(self, tt, tage): 
         ''' FSPS SPS model using NMF SFH and ZH bases 
 
@@ -624,6 +688,7 @@ class NMF(Model):
             Nparam array that specifies the parameter values 
 
         tage : float 
+            age of galaxy 
         
 
         Returns
@@ -645,6 +710,9 @@ class NMF(Model):
         '''
         if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
         theta = self._parse_theta(tt) 
+        
+        assert np.isclose(np.sum([theta['beta1_sfh'], theta['beta2_sfh'],
+            theta['beta3_sfh'], theta['beta4_sfh']]), 1.), "SFH basis coefficients should add up to 1"
         
         # NMF SFH(t) noramlized to 1 **without burst**
         tlookback, sfh = self.SFH(
@@ -696,7 +764,7 @@ class NMF(Model):
         lum_ssp *= (10**theta['logmstar'])
         return wave_rest, lum_ssp
 
-    def _fsps_burst(self, tt):
+    def _fsps_burst(self, tt, debug=False):
         ''' dust attenuated luminosity contribution from a SSP that corresponds
         to the burst. This spectrum is normalized such that the total formed
         mass is 1 Msun, **not** fburst 
@@ -705,7 +773,6 @@ class NMF(Model):
         theta = self._parse_theta(tt) 
         tt_zh = np.array([theta['gamma1_zh'], theta['gamma2_zh']])
 
-        fburst = theta['fburst']
         tburst = theta['tburst'] 
 
         dust1           = theta['dust1']
@@ -715,6 +782,12 @@ class NMF(Model):
         # get metallicity at tburst 
         zburst = np.sum(np.array([tt_zh[i] * self._zh_basis[i](tburst) 
             for i in range(self._N_nmf_zh)]))
+        
+        if debug:
+            print('zburst=%e' % zburst) 
+            print('dust1=%f' % dust1) 
+            print('dust2=%f' % dust2) 
+            print('dust_index=%f' % dust_index) 
     
         # luminosity of SSP at tburst 
         self._ssp.params['logzsol'] = np.log10(zburst/0.0190) # log(Z/Zsun)
@@ -728,6 +801,151 @@ class NMF(Model):
         # note that this spectrum is normalized such that the total formed
         # mass = 1 Msun
         return wave_rest, lum_burst
+
+    def _emu_nmf(self, tt):
+        ''' 
+        
+        Parameters
+        ----------
+        tt : 1d array 
+            Nparam array that specifies 
+            [beta1_sfh, beta2_sfh, beta3_sfh, beta4_sfh, gamma1_zh, gamma2_zh, dust1, dust2, dust_index, redshift] 
+    
+        Returns
+        -------
+        logflux : array_like[Nwave,] 
+            (natural) log of (SSP luminosity in units of Lsun/A)
+        '''
+        logflux = [] 
+
+        for iwave in range(self._nmf_n_emu): # wave bins
+            W_, b_, alphas_, betas_, parameters_shift_, parameters_scale_,\
+                    pca_shift_, pca_scale_, spectrum_shift_, spectrum_scale_,\
+                    pca_transform_matrix_, wavelengths, n_layers =\
+                    self._nmf_emu_params[iwave] 
+
+            # forward pass through the network
+            act = []
+            layers = [(tt - parameters_shift_)/parameters_scale_]
+            for i in range(n_layers-1):
+
+                # linear network operation
+                act.append(np.dot(layers[-1], W_[i]) + b_[i])
+
+                # pass through activation function
+                layers.append((betas_[i] + (1.-betas_[i])*1./(1.+np.exp(-alphas_[i]*act[-1])))*act[-1])
+
+            # final (linear) layer -> (normalized) PCA coefficients
+            layers.append(np.dot(layers[-1], W_[-1]) + b_[-1])
+
+            # rescale PCA coefficients, multiply out PCA basis -> normalized spectrum, shift and re-scale spectrum -> output spectrum
+            logflux.append(np.dot(layers[-1]*pca_scale_ + pca_shift_,
+                pca_transform_matrix_)*spectrum_scale_ + spectrum_shift_)
+
+        return np.concatenate(logflux) 
+    
+    def _emu_burst(self, tt, debug=False): 
+        ''' calculate the dust attenuated luminosity contribution from a SSP
+        that corresponds to the burst using an emulator. This spectrum is
+        normalized such that the total formed mass is 1 Msun, **not** fburst 
+
+        Notes
+        -----
+        * currently luminosity contribution is set to 0 if tburst > 13.27 due
+        to FSPS numerical accuracy  
+        '''
+        theta = self._parse_theta(tt) 
+        tt_zh = np.array([theta['gamma1_zh'], theta['gamma2_zh']])
+
+        tburst = theta['tburst'] 
+
+        if tburst > 13.27: 
+            warnings.warn('tburst > 13.27 Gyr returns 0s --- modify priors')
+            return np.zeros(len(self._nmf_emu_waves))
+
+        dust1           = theta['dust1']
+        dust2           = theta['dust2']
+        dust_index      = theta['dust_index']
+
+        # [tburst, ZH coeff0, ZH coeff1, dust1, dust2, dust_index]
+        tt = np.array([
+            tburst, 
+            theta['gamma1_zh'], 
+            theta['gamma2_zh'], 
+            theta['dust1'], 
+            theta['dust2'], 
+            theta['dust_index']]).flatten()
+
+        logflux = [] 
+        for iwave in range(self._burst_n_emu): # wave bins
+            W_, b_, alphas_, betas_, parameters_shift_, parameters_scale_,\
+                    pca_shift_, pca_scale_, spectrum_shift_, spectrum_scale_,\
+                    pca_transform_matrix_, wavelengths, n_layers =\
+                    self._burst_emu_params[iwave] 
+
+            # forward pass through the network
+            act = []
+            layers = [(tt - parameters_shift_)/parameters_scale_]
+            for i in range(n_layers-1):
+
+                # linear network operation
+                act.append(np.dot(layers[-1], W_[i]) + b_[i])
+
+                # pass through activation function
+                layers.append((betas_[i] + (1.-betas_[i])*1./(1.+np.exp(-alphas_[i]*act[-1])))*act[-1])
+
+            # final (linear) layer -> (normalized) PCA coefficients
+            layers.append(np.dot(layers[-1], W_[-1]) + b_[-1])
+
+            # rescale PCA coefficients, multiply out PCA basis -> normalized spectrum, shift and re-scale spectrum -> output spectrum
+            logflux.append(np.dot(layers[-1]*pca_scale_ + pca_shift_,
+                pca_transform_matrix_)*spectrum_scale_ + spectrum_shift_)
+        return np.concatenate(logflux) 
+
+    def _load_emulator(self): 
+        ''' read in pickle files that contains the parameters for the FSPS
+        emulator that is split into wavelength bins
+        '''
+        # load NMF emulator 
+        npcas = [50, 30, 30]
+        f_nn = lambda npca, i: 'fsps.nmf_bases.seed0_499.3w%i.pca%i.8x256.nbatch250.pkl' % (i, npca)
+        
+        self._nmf_n_emu         = len(npcas)
+        self._nmf_emu_params    = [] 
+        self._nmf_emu_wave      = [] 
+
+        for i, npca in enumerate(npcas): 
+            fpkl = open(os.path.join(
+                os.path.dirname(os.path.realpath(__file__)), 'dat', 
+                f_nn(npca, i)), 'rb')
+            params = pickle.load(fpkl)
+            fpkl.close()
+            
+            self._nmf_emu_params.append(params)
+            self._nmf_emu_wave.append(params[11])
+
+        self._nmf_emu_waves = np.concatenate(self._nmf_emu_wave) 
+
+        # load burst emulator here once it's done training 
+        npcas = [50, 30, 30]
+        f_nn = lambda npca, i: 'fsps.burst.seed0_499.3w%i.pca%i.8x256.nbatch250.pkl' % (i, npca)
+        self._burst_n_emu = len(npcas)
+        self._burst_emu_params    = [] 
+        self._burst_emu_wave      = [] 
+
+        for i, npca in enumerate(npcas): 
+            fpkl = open(os.path.join(
+                os.path.dirname(os.path.realpath(__file__)), 'dat', 
+                f_nn(npca, i)), 'rb')
+            params = pickle.load(fpkl)
+            fpkl.close()
+            
+            self._burst_emu_params.append(params)
+            self._burst_emu_wave.append(params[11])
+        
+        # check that emulator wavelengths agree
+        assert np.array_equal(self._nmf_emu_waves, np.concatenate(self._burst_emu_wave))
+        return None 
 
     def SFH(self, tt, zred=None, tage=None, burst=True): 
         ''' star formation history for given set of parameter values and
@@ -902,14 +1120,13 @@ class NMF(Model):
             self._sps_model = self._fsps 
         else: 
             self._sps_model = self._emu
+            self._load_emulator()
 
         return None 
 
     def _ssp_initiate(self): 
         ''' initialize sps (FSPS StellarPopulaiton object) 
         '''
-        import fsps
-
         sfh         = 0 # tabulated SFH
         dust_type   = 4 # dust1, dust2, and dust_index 
         imf_type    = 1 # chabrier
@@ -1189,9 +1406,6 @@ class FSPS(Model):
     def _ssp_initiate(self): 
         ''' initialize sps (FSPS StellarPopulaiton object) 
         '''
-        import fsps
-
-
         if self.name == 'tau': 
             sfh         = 1
             dust_type   = 2 # Calzetti et al. (2000) attenuation curve
@@ -1522,8 +1736,6 @@ class FSPS_NMF(FSPS):
     def _ssp_initiate(self): 
         ''' initialize sps (FSPS StellarPopulaiton object) 
         '''
-        import fsps
-
         sfh         = 0 # tabulated SFH
         dust_type   = 4 # dust1, dust2, and dust_index 
         imf_type    = 1 # chabrier
