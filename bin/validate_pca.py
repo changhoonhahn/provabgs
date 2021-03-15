@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 model = 'burst' 
 n_pcas = [50, 30, 30] 
 
-model = 'nmf_bases'
-n_pcas = [50, 30, 30] 
+#model = 'nmf_bases'
+#n_pcas = [50, 30, 30] 
 #n_pcas  = [30, 30, 30, 30, 30, 30]
 
 #model = 'nmfburst'
@@ -31,6 +31,8 @@ else:
 dat_dir='/tigress/chhahn/provabgs/'
 if 'NERSC_HOST' in os.environ: 
     dat_dir = '/global/cscratch1/sd/chahah/provabgs/'
+    if model == 'burst': 
+        dat_dir = '/global/cscratch1/sd/chahah/_burst_tmp/'
 
 # read in wavelenght values 
 wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy'))
