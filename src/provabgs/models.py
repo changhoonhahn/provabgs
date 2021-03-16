@@ -7,7 +7,6 @@ module for sps models
 '''
 import os 
 import h5py 
-import fsps
 import pickle
 import warnings
 import numpy as np 
@@ -19,6 +18,11 @@ from astropy import units as U
 from astropy.cosmology import Planck13
 # --- gqp_mc --- 
 from . import util as UT
+
+try: 
+    import fsps
+except ImportError:
+    warnings.warn('import error with fsps; only use emulators')
 
 
 class Model(object): 
