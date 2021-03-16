@@ -256,31 +256,22 @@ class MCMC(object):
                 nwalkers=nwalkers, opt_maxiter=opt_maxiter,
                 theta_start=theta_start, debug=debug)
 
-        if debug: print('--- burn-in ---') 
+        if debug: print('--- running MCMC ---') 
         zeus_sampler = zeus.EnsembleSampler(
                 self.nwalkers,
                 self.ndim_sampling, 
                 self.lnPost, 
                 args=lnpost_args, 
                 kwargs=lnpost_kwargs)
-        zeus_sampler.run_mcmc(start, burnin, progress=progress)
-        burnin = zeus_sampler.get_chain()
+        zeus_sampler.run_mcmc(start, burnin + niter, progress=progress)
 
-        if debug: print('--- running main MCMC ---') 
-        zeus_sampler = zeus.EnsembleSampler(
-                self.nwalkers,
-                self.ndim_sampling, 
-                self.lnPost, 
-                args=lnpost_args, 
-                kwargs=lnpost_kwargs)
-        zeus_sampler.run_mcmc(burnin[-1], niter, progress=progress)
+        _chain = zeus_sampler.get_chain()[burnin:,:,:]
 
-        _chain = zeus_sampler.get_chain()
         # apply prior transform (e.g. this would transform SFH bases into
-        # Dirichlet priors) 
+        # Dirichlet priors) and discard burn-in 
         chain = self.prior.transform(_chain)
-        lnpost = zeus_sampler.get_log_prob() 
-                    
+        lnpost = zeus_sampler.get_log_prob()[burnin:,:]
+
         output = self._save_chains(
                 chain, 
                 lnpost, 
@@ -321,7 +312,7 @@ class MCMC(object):
             print('initial theta = [%s]' % ', '.join([str(_t) for _t in tt0])) 
             print('log Posterior(theta0) = %f' % logp0)
         # initial walker positions 
-        p0 = [tt0 + 0.1 * std0 * np.random.randn(ndim) for i in range(nwalkers)]
+        p0 = [tt0 + 1e-3 * std0 * np.random.randn(ndim) for i in range(nwalkers)]
         # chekc that they're within the prior
         for i in range(nwalkers): 
             while not np.isfinite(self.prior.lnPrior(p0[i])): 
@@ -375,10 +366,11 @@ class MCMC(object):
     
         output = {} 
         output['prior_range'] = self.prior.range 
-        output['theta_bestfit']     = theta_bestfit
+        output['theta_bestfit'] = theta_bestfit
         
         if writeout is None:
             output['mcmc_chain'] = chain 
+            output['log_prob'] = lnpost 
             return output
 
         if not newfile: 
@@ -390,6 +382,7 @@ class MCMC(object):
             for k in output.keys(): 
                 mcmc.create_dataset(k, data=output[k]) 
         mcmc.close() 
+
         output['mcmc_chain'] = chain 
         output['log_prob'] = lnpost 
         return output  
@@ -576,6 +569,9 @@ class desiMCMC(MCMC):
                 flux_ivar_obs=flux_ivar_obs, resolution=resolution, 
                 photo_obs=photo_obs, photo_ivar_obs=photo_ivar_obs, zred=zred,
                 vdisp=vdisp, prior=prior, mask=mask, bands=bands)
+
+        self._lnpost_args = lnpost_args
+        self._lnpost_kwargs = lnpost_kwargs
         
         # run MCMC 
         if sampler == 'emcee': 
