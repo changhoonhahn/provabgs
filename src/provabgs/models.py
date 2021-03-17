@@ -645,7 +645,6 @@ class NMF(Model):
         -----
         * replace redshift dependence of emulator to tage for consistency
         '''
-        if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
         theta = self._parse_theta(tt) 
         
         assert np.isclose(np.sum([theta['beta1_sfh'], theta['beta2_sfh'],
@@ -922,7 +921,7 @@ class NMF(Model):
             fpkl = open(os.path.join(
                 os.path.dirname(os.path.realpath(__file__)), 'dat', 
                 f_nn(npca, i)), 'rb')
-            params = np.load(fpkl)
+            params = pickle.load(fpkl)
             
             self._nmf_emu_params.append(params)
             self._nmf_emu_wave.append(params[11])
@@ -931,8 +930,7 @@ class NMF(Model):
 
         # load burst emulator here once it's done training 
         npcas = [50, 30, 30]
-        f_nn = lambda npca, i:
-            'fsps.burst.seed0_499.3w%i.pca%i.8x256.nbatch250.pkl' % (i, npca)
+        f_nn = lambda npca, i: 'fsps.burst.seed0_499.3w%i.pca%i.8x256.nbatch250.pkl' % (i, npca)
         self._burst_n_emu = len(npcas)
         self._burst_emu_params    = [] 
         self._burst_emu_wave      = [] 
@@ -941,7 +939,7 @@ class NMF(Model):
             fpkl = open(os.path.join(
                 os.path.dirname(os.path.realpath(__file__)), 'dat', 
                 f_nn(npca, i)), 'rb')
-            params = np.load(fpkl)
+            params = pickle.load(fpkl)
             
             self._burst_emu_params.append(params)
             self._burst_emu_wave.append(params[11])
