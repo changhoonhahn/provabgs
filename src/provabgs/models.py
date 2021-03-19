@@ -180,7 +180,7 @@ class Model(object):
         smoothflux = gaussian_filter1d(flux_wlog, sigma=sigma, axis=0)
         return wlog, smoothflux
     
-    def avgSFR(self, tt, zred, dt=1., t0=None, method='trapz'):
+    def avgSFR(self, tt, zred=None, tage=None, dt=1., t0=None, method='trapz'):
         ''' given a set of parameter values `tt` and redshift `zred`, calculate
         SFR averaged over `dt` Gyr. 
 
@@ -201,7 +201,12 @@ class Model(object):
             specified, the function returns the average SFR over the range [t0,
             t0-dt]. If None, [tage, tage-dt]
         '''
-        _t, _sfh = self.SFH(tt, zred=zred) # get SFH 
+        if zred is None and tage is None: 
+            raise ValueError('specify either zred or tage')
+        if zred is not None and tage is not None: 
+            raise ValueError('specify either zred or tage')
+
+        _t, _sfh = self.SFH(tt, tage=tage, zred=zred) # get SFH 
         if np.atleast_2d(_t).shape[0] > 1: 
             ts, sfhs = _t, _sfh 
         else: 
@@ -266,13 +271,18 @@ class Model(object):
         else: 
             return np.concatenate(avsfrs) 
     
-    def Z_MW(self, tt, tage):
+    def Z_MW(self, tt, tage=None, zred=None):
         ''' given theta calculate mass weighted metallicity using the ZH NMF
         bases. 
         '''
+        if tage is None and zred is None: 
+            raise ValueError("specify either zred or tage") 
+        if tage is not None and zred is not None: 
+            raise ValueError("specify either zred or tage") 
+
         theta = self._parse_theta(tt) 
-        t, sfh = self.SFH(tt, tage=tage) # get SFH 
-        _, zh = self.ZH(tt, tage=tage, tcosmic=t) 
+        t, sfh = self.SFH(tt, tage=tage, zred=zred) # get SFH 
+        _, zh = self.ZH(tt, tage=tage, zred=zred, tcosmic=t) 
 
         # mass weighted average
         z_mw = np.trapz(zh * sfh, t) / (10**theta['logmstar']) # np.trapz(sfh, t) should equal tt[:,0] 
