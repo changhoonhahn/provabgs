@@ -25,6 +25,28 @@ class MCMC(object):
     def __init__(self): 
         pass
 
+    def lnPrior(self, theta, debug=False): 
+        ''' log Prior with `corrprior.CorrectPrior` prior correction support
+        '''
+        lp = self.prior.lnPrior(theta)
+        if not np.isfinite(lp): 
+            return -np.inf
+
+        if self.corrprior is not None: 
+            # transform theta 
+            ttheta = self.prior.transform(theta)
+            # get derived properties
+            fttheta = self.corrprior._get_properties(ttheta)
+            
+            # p'(theta)  = q(theta)/p(f(theta)|q)
+            lpf = self.corrprior.p_ftheta.log_pdf(fttheta)
+            if not np.isfinite(lpf): 
+                return -np.inf
+            lp -= lpf 
+
+        if debug: print('  log Prior = %f' % lp) 
+        return lp 
+
     def lnPost(self, theta, *args, debug=False, **kwargs):
         ''' log Posterior of parameters `theta` 
 
@@ -34,7 +56,7 @@ class MCMC(object):
         theta : array_like[Nparam,]
             parameter values
         '''
-        lp = self.prior.lnPrior(theta) # log prior
+        lp = self.lnPrior(theta, debug=debug) # log prior
         if debug: print('  log Prior = %f' % lp) 
         if not np.isfinite(lp): 
             return -np.inf
@@ -49,7 +71,7 @@ class MCMC(object):
 
         return lp  + lnlike 
     
-    def _emcee(self, lnpost_args, lnpost_kwargs, prior, nwalkers=100,
+    def _emcee(self, lnpost_args, lnpost_kwargs, nwalkers=100,
             burnin=100, niter='adaptive', maxiter=200000, opt_maxiter=1000, 
             debug=False, writeout=None, overwrite=False, **kwargs): 
         ''' Run MCMC, using `emcee` for a given log posterior function.
@@ -63,9 +85,6 @@ class MCMC(object):
         lnpost_kwargs : dictionary
             keyward arguments for log posterior function, `self.lnPost`
         
-        prior : PriorSeq object
-            PriorSeq object which specifies the prior. See `infer.load_priors`. 
-
         nwalkers : int
             number of mcmc walkers
             (Default: 100) 
@@ -107,12 +126,12 @@ class MCMC(object):
         '''
         self.nwalkers = nwalkers # number of walkers 
 
-        ndim = prior.ndim
+        ndim = self.prior.ndim
 
         if (writeout is None) or (not os.path.isfile(writeout)) or (overwrite): 
             # if mcmc chain file does not exist or we want to overwrite
             # initialize the walkers 
-            start = self._initialize_walkers(lnpost_args, lnpost_kwargs, prior,
+            start = self._initialize_walkers(lnpost_args, lnpost_kwargs, 
                     nwalkers=nwalkers, opt_maxiter=opt_maxiter, debug=debug)
 
             # burn in 
@@ -127,8 +146,8 @@ class MCMC(object):
 
             mcmc = self.read_chain(writeout, flat=False, debug=debug) 
 
-            assert np.array_equal(mcmc['prior_range'].T[0], prior.min), 'prior range does not agree with existing chain'
-            assert np.array_equal(mcmc['prior_range'].T[1], prior.max), 'prior range does not agree with existing chain'
+            assert np.array_equal(mcmc['prior_range'].T[0], self.prior.min), 'prior range does not agree with existing chain'
+            assert np.array_equal(mcmc['prior_range'].T[1], self.prior.max), 'prior range does not agree with existing chain'
 
             # check that theta names agree 
             #for theta in self.theta_names: 
@@ -207,7 +226,7 @@ class MCMC(object):
 
         return output 
 
-    def _zeus(self, lnpost_args, lnpost_kwargs, prior, nwalkers=100, niter=1000,
+    def _zeus(self, lnpost_args, lnpost_kwargs, nwalkers=100, niter=1000,
             burnin=100, opt_maxiter=1000, debug=False,
             writeout=None, overwrite=False, theta_start=None, progress=True, **kwargs): 
         ''' sample posterior distribution using `zeus`
@@ -221,9 +240,6 @@ class MCMC(object):
         lnpost_kwargs : dictionary
             keyward arguments for log posterior function, `self.lnPost`
         
-        prior : PriorSeq object
-            PriorSeq object which specifies the prior. See `infer.load_priors`. 
-
         nwalkers : int
             number of mcmc walkers
             (Default: 100) 
@@ -248,8 +264,6 @@ class MCMC(object):
         '''
         self.nwalkers = nwalkers # number of walkers 
 
-        if prior is not None: 
-            self.prior = prior
         self.ndim_sampling = self.prior.ndim_sampling
         
         start = self._initialize_walkers(lnpost_args, lnpost_kwargs, 
@@ -315,7 +329,7 @@ class MCMC(object):
         p0 = [tt0 + 1e-3 * std0 * np.random.randn(ndim) for i in range(nwalkers)]
         # chekc that they're within the prior
         for i in range(nwalkers): 
-            while not np.isfinite(self.prior.lnPrior(p0[i])): 
+            while not np.isfinite(self.lnPrior(p0[i])): 
                 p0[i] = tt0 + 1e-3 * std0 * np.random.randn(ndim)
         return p0
 
@@ -451,7 +465,7 @@ class desiMCMC(MCMC):
     ''' MCMC inference object specifically designed for analyzing DESI
     spectroscopic and photometric data.
     '''
-    def __init__(self, model=None, flux_calib=None, prior=None): 
+    def __init__(self, model=None, flux_calib=None, prior=None, corrprior=None): 
         if model is None: # default Model class object 
             from .models import DESIspeculator
             self.model = DESIspeculator()
@@ -465,10 +479,13 @@ class desiMCMC(MCMC):
             self.flux_calib = flux_calib
 
         self.prior = prior 
+        assert 'sed' in self.prior.labels, 'please label which priors are for the SED'
+
+        self.corrprior = corrprior
     
     def run(self, wave_obs=None, flux_obs=None, flux_ivar_obs=None,
             resolution=None, photo_obs=None, photo_ivar_obs=None, zred=None,
-            vdisp=150., prior=None, mask=None, bands=None, sampler='emcee',
+            vdisp=150., mask=None, bands=None, sampler='emcee',
             nwalkers=100, niter=1000, burnin=100, maxiter=200000,
             opt_maxiter=100, theta_start=None, writeout=None, overwrite=False, debug=False,
             progress=True, **kwargs): 
@@ -504,9 +521,6 @@ class desiMCMC(MCMC):
             velocity disperion in km/s. 
             (Default: 150.) 
     
-        prior : PriorSeq object
-            A `infer.PriorSeq` object
-
         mask : string or array_like[Nwave,]
             boolean array specifying where to mask the spectra. There are a few
             preset masks: 
@@ -568,7 +582,7 @@ class desiMCMC(MCMC):
                 wave_obs=wave_obs, flux_obs=flux_obs,
                 flux_ivar_obs=flux_ivar_obs, resolution=resolution, 
                 photo_obs=photo_obs, photo_ivar_obs=photo_ivar_obs, zred=zred,
-                vdisp=vdisp, prior=prior, mask=mask, bands=bands)
+                vdisp=vdisp, mask=mask, bands=bands)
 
         self._lnpost_args = lnpost_args
         self._lnpost_kwargs = lnpost_kwargs
@@ -582,7 +596,6 @@ class desiMCMC(MCMC):
         output = mcmc_sampler( 
                 lnpost_args, 
                 lnpost_kwargs, 
-                self.prior,
                 nwalkers=nwalkers,
                 burnin=burnin, 
                 niter=niter, 
@@ -647,18 +660,13 @@ class desiMCMC(MCMC):
 
     def _lnPost_args_kwargs(self, wave_obs=None, flux_obs=None,
             flux_ivar_obs=None, resolution=None, photo_obs=None,
-            photo_ivar_obs=None, zred=None, vdisp=None, prior=None,
-            mask=None, bands=None):
+            photo_ivar_obs=None, zred=None, vdisp=None, mask=None,
+            bands=None):
         ''' preprocess all the inputs and get arg and kwargs for lnPost method 
         '''
         # check inputs
         obs_data_type = self._obs_data_type(wave_obs, flux_obs, flux_ivar_obs,
                 photo_obs, photo_ivar_obs) 
-
-        if prior is not None: # update prior if specified  
-            self.prior = prior 
-    
-        assert 'sed' in self.prior.labels, 'please label which priors are for the SED'
 
         if isinstance(wave_obs, list): 
             # if separate wavelength bins are provided in a list (e.g.
@@ -1075,7 +1083,7 @@ class UniformPrior(Prior):
         assert np.all(self.min <= self.max)
         
     def lnPrior(self, theta):
-        if np.all(theta < self.max) and np.all(theta >= self.min): 
+        if np.all(theta <= self.max) and np.all(theta >= self.min): 
             return 0.
         else:
             return -np.inf
