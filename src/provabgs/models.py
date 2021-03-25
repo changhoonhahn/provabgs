@@ -219,7 +219,7 @@ class Model(object):
             sfh = np.atleast_2d(sfh) / 1e9 # in units of 10^9 Msun 
 
             tage = tlookback[-1] 
-            assert tage > dt # check that the age of the galaxy is longer than the timescale 
+            assert tage > dt, "tage=%.2f, dt=%.2f" % (tage, dt) # check that the age of the galaxy is longer than the timescale 
 
             if t0 is None: 
                 # calculate average SFR over the range tcomic [tage, tage - dt]
@@ -348,7 +348,7 @@ class Model(object):
         '''
         tt = np.atleast_2d(tt) 
 
-        assert tt.shape[1] == len(self._parameters) 
+        assert tt.shape[1] == len(self._parameters), 'given theta has %i instead of %i dims' % (tt.shape[1], len(self._parameters))
 
         theta = {} 
         for i, param in enumerate(self._parameters): 
