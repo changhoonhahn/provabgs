@@ -17,6 +17,8 @@ def no_flux_factor(tt, flux):
     flux : array_like[Nwave,]
         SED that flux calibration is being applied to. 
     '''
+    if isinstance(flux, list): 
+        return np.concatenate(flux) 
     return flux 
 
 
