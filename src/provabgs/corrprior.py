@@ -113,7 +113,7 @@ class CorrectPrior(object):
             ws[~inrange] = 0.
         return ws
 
-    def validate(self, Nvalidate=10000, outlier=0.1):
+    def validate(self, Nvalidate=10000, outlier=0.1, truths=None):
         ''' generate validation plot for corrprior object. The figure will
         plot the original f(theta) prior distribution to the corrprior fit to
         p(f(theta)) and the corrected distribution.
@@ -125,7 +125,7 @@ class CorrectPrior(object):
             (default : 10000) 
         '''
         # sample Nprior thetas from prior 
-        _theta_prior = np.array([self.prior.sample() for i in np.arange(self.Nvalidate)])
+        _theta_prior = np.array([self.prior.sample() for i in np.arange(Nvalidate)])
         theta_prior = self.prior.transform(_theta_prior)
 
         # get specified properties from theta and model
@@ -145,6 +145,8 @@ class CorrectPrior(object):
             _ = sub.hist(ftheta_valid, density=True, color='C1', alpha=0.9)
             _ = sub.hist(ftheta_prior, weights=w_imp, density=True, color='C2',
                     alpha=0.8)
+            if truths is not None: 
+                sub.axvline(truths, color='k', linestyle='--') 
             sub.set_xlim(np.min(np.concatenate([ftheta_prior, ftheta_valid])),
                     np.max(np.concatenate([ftheta_prior, ftheta_valid]))) 
         else:
@@ -155,9 +157,9 @@ class CorrectPrior(object):
             _ = DFM.corner(ftheta_valid, hist_kwargs={'density': True},
                     plot_datapoints=False, plot_density=False, color='C1',
                     fig=fig)
-            _ = DFM.corner(ftheta_prior, weights=w_imp, hist_kwargs={'density':
-                True}, plot_datapoints=False, plot_density=False, color='C2', 
-                fig=fig)
+            _ = DFM.corner(ftheta_prior, weights=w_imp, truths=truths, 
+                    hist_kwargs={'density': True}, plot_datapoints=False,
+                    plot_density=False, color='C2', fig=fig)
         return fig 
 
     def _fit_prior(self, range=None, debug=False, **method_kwargs): 
