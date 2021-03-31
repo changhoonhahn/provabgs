@@ -71,7 +71,7 @@ class CorrectPrior(object):
 
         # check that properties are named 
         self.supported_props = ['logmstar', 'avgsfr_1gyr', 'logavgsfr_1gyr',
-                'avgssfr_1gyr', 'logavgssfr_1gyr', 'z_mw']
+                'avgssfr_1gyr', 'logavgssfr_1gyr', 'z_mw', 'logz_mw']
         for prop in self.props:
             assert prop in self.supported_props, (
                     "%s not supported \ncurrently %s are supported" % 
@@ -113,7 +113,7 @@ class CorrectPrior(object):
             ws[~inrange] = 0.
         return ws
 
-    def validate(self, Nvalidate=10000, outlier=0.1, truths=None):
+    def validate(self, Nvalidate=10000, outlier=0.1, truths=None, bins=50):
         ''' generate validation plot for corrprior object. The figure will
         plot the original f(theta) prior distribution to the corrprior fit to
         p(f(theta)) and the corrected distribution.
@@ -138,13 +138,20 @@ class CorrectPrior(object):
         w_imp = self.get_importance_weights(theta_prior, outlier=outlier)
     
         if len(self.props) == 1: 
+            import matplotlib.pyplot as plt
+            
+            range = (np.min(np.concatenate([ftheta_prior, ftheta_valid])),
+                    np.max(np.concatenate([ftheta_prior, ftheta_valid])))
+
             # plot 1d histogram 
             fig = plt.figure(figsize=(6,6))
             sub = fig.add_subplot(111)
-            _ = sub.hist(ftheta_prior, density=True, color='C0')
-            _ = sub.hist(ftheta_valid, density=True, color='C1', alpha=0.9)
+            _ = sub.hist(ftheta_prior, density=True, color='C0', 
+                    range=range, histtype='step', bins=bins)
+            _ = sub.hist(ftheta_valid, density=True, color='C1', alpha=0.9,
+                    range=range, histtype='step', bins=bins)
             _ = sub.hist(ftheta_prior, weights=w_imp, density=True, color='C2',
-                    alpha=0.8)
+                    alpha=0.8, range=range, histtype='step', bins=bins)
             if truths is not None: 
                 sub.axvline(truths, color='k', linestyle='--') 
             sub.set_xlim(np.min(np.concatenate([ftheta_prior, ftheta_valid])),
@@ -217,6 +224,11 @@ class CorrectPrior(object):
             if debug: print('... calculating mass-weighted Z') 
             zmw = self.model.Z_MW(theta, tage=self.tage, zred=self.zred) 
             derived_props.append(zmw) 
+
+        if 'logz_mw' in self.props: # mass-weighted metallicity 
+            if debug: print('... calculating log mass-weighted Z') 
+            zmw = self.model.Z_MW(theta, tage=self.tage, zred=self.zred) 
+            derived_props.append(np.log10(zmw))
 
         return np.array(derived_props).T 
 
