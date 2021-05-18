@@ -833,6 +833,32 @@ class desiMCMC(MCMC):
     
 
 # --- priors --- 
+def default_NMF_prior(burst=True, stellar_evol_offset=True): 
+    ''' default prior for NMF model
+    '''
+    prior_list = [
+            UniformPrior(8., 12., label='sed'),
+            FlatDirichletPrior(4, label='sed')   # flat dirichilet priors
+            ]
+    if burst: 
+        prior_list.append(UniformPrior(0., 1., label='sed')) # burst fraction
+        prior_list.append(UniformPrior(0., 13.27, label='sed')) # tburst
+    
+    prior_list.append(UniformPrior(6.9e-5, 7.3e-3, label='sed')) # uniform priors on ZH coeff
+    prior_list.append(UniformPrior(6.9e-5, 7.3e-3, label='sed')) # uniform priors on ZH coeff
+    prior_list.append(UniformPrior(0., 3., label='sed'))        # uniform priors on dust1
+    prior_list.append(UniformPrior(0., 3., label='sed'))        # uniform priors on dust2
+    prior_list.append(UniformPrior(-2.2, 0.4, label='sed'))     # uniform priors on dust_index
+    
+    if stellar_evol_offset:
+        # set prior
+        prior_list.append(GaussianPrior(0., 4.3**2, label='sed'))
+        prior_list.append(GaussianPrior(0., 2.5**2, label='sed'))
+        prior_list.append(GaussianPrior(0., 1.7**2, label='sed'))
+        
+    return load_priors(prior_list) 
+
+
 def load_priors(list_of_prior_obj): 
     ''' load list of `infer.Prior` class objects into a PriorSeq object
 
