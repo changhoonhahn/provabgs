@@ -346,7 +346,7 @@ class Model(object):
     def _parse_theta(self, tt):
         ''' parse given array of parameter values 
         '''
-        tt = np.atleast_2d(tt) 
+        tt = np.atleast_2d(tt.copy()) 
 
         assert tt.shape[1] == len(self._parameters), 'given theta has %i instead of %i dims' % (tt.shape[1], len(self._parameters))
 
