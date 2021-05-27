@@ -17,11 +17,11 @@ def prior_nmf(ncomp):
     '''
     return Infer.load_priors([
         Infer.FlatDirichletPrior(ncomp, label='sed'),       # flat dirichilet priors
-        Infer.UniformPrior(6.9e-5, 7.3e-3, label='sed'),# uniform priors on ZH coeff
-        Infer.UniformPrior(6.9e-5, 7.3e-3, label='sed'),# uniform priors on ZH coeff
+        Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on ZH coeff
+        Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on ZH coeff
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust2
-        Infer.UniformPrior(-2.2, 0.4, label='sed'),     # uniform priors on dust_index 
+        Infer.UniformPrior(-3., 1., label='sed'),     # uniform priors on dust_index 
         Infer.UniformPrior(0., 0.6, label='sed')       # uniformly sample redshift
         ])
 
@@ -31,27 +31,10 @@ def prior_burst():
     '''
     return Infer.load_priors([
         Infer.UniformPrior(0., 13.8),                   # uniform priors tburst 
-        Infer.UniformPrior(6.9e-5, 7.3e-3, label='sed'),# uniform priors on ZH coeff
-        Infer.UniformPrior(6.9e-5, 7.3e-3, label='sed'),# uniform priors on ZH coeff
+        Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on ZH coeff
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust2
-        Infer.UniformPrior(-2.2, 0.4, label='sed')     # uniform priors on dust_index 
-        ])
-
-
-def prior_nmfburst(): 
-    ''' prior on 4 component NMF by Rita
-    '''
-    return Infer.load_priors([
-        Infer.FlatDirichletPrior(4, label='sed'),   # flat dirichilet priors
-        Infer.UniformPrior(0., 1.),                     # uniform priors fburst
-        Infer.UniformPrior(0., 13.8),                   # uniform priors tburst 
-        Infer.UniformPrior(6.9e-5, 7.3e-3, label='sed'),# uniform priors on ZH coeff
-        Infer.UniformPrior(6.9e-5, 7.3e-3, label='sed'),# uniform priors on ZH coeff
-        Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
-        Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust2
-        Infer.UniformPrior(-2.2, 0.4, label='sed'),     # uniform priors on dust_index 
-        Infer.UniformPrior(0., 0.6, label='sed')       # uniformly sample redshift 
+        Infer.UniformPrior(-3., 1., label='sed')     # uniform priors on dust_index 
         ])
 
 
@@ -66,12 +49,9 @@ def fsps_prior_samples(name, ibatch, ncpu=1):
         nspec = 10000 # batch size 
 
     # load priors 
-    if name == 'nmf_bases': 
-        priors = prior_nmf(4)
-    elif name == 'nmfburst': 
-        priors = prior_nmfburst() 
+    priors = prior_nmf(4)
 
-    dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
+    dat_dir='/global/cscratch1/sd/chahah/provabgs/emulator' # hardcoded to NERSC directory 
     if ibatch == 'test': 
         ftheta = os.path.join(dat_dir,
                 'fsps.%s.theta.test.npy' % name) 
@@ -89,21 +69,23 @@ def fsps_prior_samples(name, ibatch, ncpu=1):
         print('--- do not overwrite ---')
         print()  
         return None 
-    
-    # sample prior and transform 
-    _thetas = np.array([priors.sample() for i in range(nspec)])
-    thetas = priors.transform(_thetas) 
 
     # load SPS model  
-    if name == 'nmf_bases':
-        Msps = Models.FSPS_NMF(name='nmf')
-    else: 
-        Msps = Models.FSPS_NMF(name=name)
-    w_fsps, _ = Msps._fsps_nmf(thetas[0]) 
+    Msps = Models.NMF(burst=False, emulator=False) 
+    
+    # sample prior and transform 
+    _thetas = np.array([priors.transform(priors.sample()) for i in range(nspec)])
+    zred    = _thetas[:,-1]
+    tage    = Msps.cosmo.age(zred).value  # age in Gyr
+    thetas  = np.zeros((nspec, 11))
+    thetas[:,1:-1]  = _thetas[:,:-1]
+    thetas[:,-1]    = tage
 
-    # wavelength range set to cover the DESI spectra and photometric filter
-    # wavelength range 
-    wmin, wmax = 2300., 11030.
+    w_fsps, _ = Msps._fsps(thetas[0,:-1], thetas[0,-1]) 
+
+    # wavelength range set to cover the DESI spectra and photometric filter (up
+    # to W2
+    wmin, wmax = 2300., 60000.
     wlim = (w_fsps >= wmin) & (w_fsps <= wmax)
 
     fwave = os.path.join(dat_dir, 'wave_fsps.npy')
@@ -114,16 +96,16 @@ def fsps_prior_samples(name, ibatch, ncpu=1):
     print('--- batch %s ---' % str(ibatch))
     # save parameters sampled from prior 
     print('  saving thetas to %s' % ftheta)
-    np.save(ftheta, thetas)
+    np.save(ftheta, _thetas)
 
     if (ncpu == 1): # run on serial 
         logspectra = []
         for _theta in thetas:
-            _, _spectrum = Msps._fsps_nmf(_theta)
+            _, _spectrum = Msps._fsps(_theta[:-1], _theta[-1])
             logspectra.append(np.log(_spectrum[wlim]))
     else: 
         def _fsps_model_wrapper(theta):
-            _, _spectrum = Msps._fsps_nmf(theta)
+            _, _spectrum = Msps._fsps(theta[:-1], theta[-1])
             return np.log(_spectrum[wlim]) 
 
         pewl = mp.Pool(ncpu) 
@@ -150,14 +132,10 @@ def fsps_burst_prior_samples(ibatch, ncpu=1):
     name = 'burst'
     priors = prior_burst() 
     
-    if os.environ['machine'] in ['della', 'tiger']: 
-        dat_dir='/tigress/chhahn/provabgs/'
-    else: 
-        dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
-
-    fwave = os.path.join(dat_dir, 'wave_fsps.npy')
-    if not os.path.isfile(fwave): # save FSPS wavelength if not saved 
-        np.save(fwave, w_fsps[wlim])
+    #if os.environ['machine'] in ['della', 'tiger']: 
+    #    dat_dir='/tigress/chhahn/provabgs/'
+    #else: 
+    dat_dir='/global/cscratch1/sd/chahah/provabgs/emulator' # hardcoded to NERSC directory 
 
     if ibatch == 'test': 
         ftheta = os.path.join(dat_dir, 'fsps.%s.theta.test.npy' % name) 
@@ -175,18 +153,33 @@ def fsps_burst_prior_samples(ibatch, ncpu=1):
         print()  
         return None 
     
-    # sample prior for burst then fit it into nmfburst theta  
+    # sample prior for burst 
     thetas = np.array([priors.sample() for i in range(nspec)])
-    thetas = np.concatenate([np.zeros((nspec, 6)), thetas], axis=1) 
 
     # load SPS model  
     Msps = Models.NMF(burst=True, emulator=False)
-    w_fsps, _ = Msps._fsps_burst(thetas[0]) 
+    Msps._ssp_initiate()
+    
+    def lssp_burst(_theta): 
+        tburst, zburst, dust1, dust2, dust_index = _theta 
+        # luminosity of SSP at tburst 
+        Msps._ssp.params['logzsol'] = np.log10(zburst/0.0190) # log(Z/Zsun)
+        Msps._ssp.params['dust1'] = dust1
+        Msps._ssp.params['dust2'] = dust2 
+        Msps._ssp.params['dust_index'] = dust_index
+        
+        return Msps._ssp.get_spectrum(tage=np.clip(tburst, 1e-8, None), peraa=True) # in units of Lsun/AA
+
+    w_fsps, _ = lssp_burst(thetas[0]) 
 
     # wavelength range set to cover the DESI spectra and photometric filter
     # wavelength range 
-    wmin, wmax = 2300., 11030.
+    wmin, wmax = 2300., 60000.
     wlim = (w_fsps >= wmin) & (w_fsps <= wmax)
+    
+    fwave = os.path.join(dat_dir, 'wave_fsps.npy')
+    if not os.path.isfile(fwave): # save FSPS wavelength if not saved 
+        np.save(fwave, w_fsps[wlim])
 
     print()  
     print('--- batch %s ---' % str(ibatch)) 
@@ -197,12 +190,11 @@ def fsps_burst_prior_samples(ibatch, ncpu=1):
     if (ncpu == 1): # run on serial 
         logspectra = []
         for _theta in thetas:
-            _, _spectrum = Msps._fsps_burst(_theta)
+            _, _spectrum = lssp_burst(_theta)
             logspectra.append(np.log(_spectrum[wlim]))
     else: 
         def _fsps_model_wrapper(theta):
-            print(theta)
-            _, _spectrum = Msps._fsps_burst(theta)
+            _, _spectrum = lssp_burst(theta)
             return np.log(_spectrum[wlim]) 
 
         pewl = mp.Pool(ncpu) 
