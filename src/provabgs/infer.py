@@ -1118,6 +1118,30 @@ class UniformPrior(Prior):
         return np.array([self._random.uniform(mi, ma) for (mi, ma) in zip(self.min, self.max)])
 
 
+class LogUniformPrior(Prior): 
+    ''' log uniform tophat prior
+    
+    '''
+    def __init__(self, _min, _max, label=None):
+        super().__init__(label=label)
+        
+        self.min = np.atleast_1d(_min)
+        self.max = np.atleast_1d(_max)
+        self.ndim = self.min.shape[0]
+        self.ndim_sampling = self.ndim
+        assert self.min.shape[0] == self.max.shape[0]
+        assert np.all(self.min <= self.max)
+        
+    def lnPrior(self, theta):
+        if np.all(theta <= self.max) and np.all(theta >= self.min): 
+            return 0.
+        else:
+            return -np.inf
+
+    def sample(self): 
+        return np.array([10**self._random.uniform(np.log10(mi), np.log10(ma)) for (mi, ma) in zip(self.min, self.max)])
+
+
 class GaussianPrior(Prior): 
     ''' Gaussian prior 
     '''
