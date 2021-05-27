@@ -633,7 +633,7 @@ class NMF(Model):
     * only supports 4 component SFH with or without burst and 2 component ZH 
     * only supports Calzetti+(2000) attenuation curve) and Chabrier IMF. 
     '''
-    def __init__(self, burst=True, iso_unc=True, emulator=False, cosmo=None): 
+    def __init__(self, burst=True, iso_unc=False, emulator=False, cosmo=None): 
         self._ssp = None 
         self._burst = burst
         self._iso_unc = iso_unc
