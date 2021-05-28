@@ -30,7 +30,7 @@ def prior_burst():
     ''' prior on burst contribution 
     '''
     return Infer.load_priors([
-        Infer.UniformPrior(0., 13.8),                   # uniform priors tburst 
+        Infer.UniformPrior(0., 13.27),                  # uniform priors tburst 
         Infer.UniformPrior(6.9e-5, 7.3e-3, label='sed'),# uniform priors on ZH coeff
         Infer.UniformPrior(6.9e-5, 7.3e-3, label='sed'),# uniform priors on ZH coeff
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
