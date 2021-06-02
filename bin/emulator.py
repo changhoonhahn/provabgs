@@ -3,6 +3,8 @@ import pickle
 import numpy as np
 import tensorflow as tf
 
+from provabgs import infer as Infer
+
 from speculator import SpectrumPCA
 from speculator import Speculator
 
@@ -22,7 +24,7 @@ desc = 'nbatch%i' % b_size
 assert os.environ['machine'] == 'tiger'
 
 #dat_dir='/scratch/gpfs/chhahn/provabgs/' # hardcoded to tiger directory 
-dat_dir='/tigress/chhahn/provabgs/'
+dat_dir='/tigress/chhahn/provabgs/emulator/'
 wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy')) 
 
 if N_wave == 6: 
@@ -44,11 +46,12 @@ n_wave = np.sum(wave_bins[i_wave])
 #-------------------------------------------------------
 if model == 'nmf_bases': n_param = 10
 elif model == 'nmfburst': n_param = 12
-elif model == 'burst': n_param = 6 
+elif model == 'nmf': n_param = 10
+elif model == 'burst': n_param = 5
 else: raise ValueError
 
 # load trained PCA basis object
-print('training PCA bases')
+print('loading PCA bases')
 PCABasis = SpectrumPCA(
         n_parameters=n_param,       # number of parameters
         n_wavelengths=n_wave, # number of wavelength values
@@ -67,12 +70,29 @@ _theta_train = np.load(os.path.join(dat_dir,
 _pca_train = np.load(os.path.join(dat_dir,
     'fsps.%s.seed0_%i.%iw%i.pca%i_pca.npy' % (model, nbatch-1, N_wave, i_wave, n_pcas)))
 
+if model == 'nmf': 
+    sps_prior = Infer.load_priors([
+        Infer.FlatDirichletPrior(ncomp, label='sed'),       # flat dirichilet priors
+        Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on ZH coeff
+        Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on ZH coeff
+        Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
+        Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust2
+        Infer.UniformPrior(-3., 1., label='sed'),     # uniform priors on dust_index 
+        Infer.UniformPrior(0., 0.6, label='sed')       # uniformly sample redshift
+        ])
+    # untranform 
+    _theta_train = sps_prior.untransform(_theta_train)
+    n_params = 9 
+
 theta_train = tf.convert_to_tensor(_theta_train.astype(np.float32))
 pca_train = tf.convert_to_tensor(_pca_train.astype(np.float32))
 
 # validation theta and pca
 theta_valid = np.load(os.path.join(dat_dir, 'fsps.%s.theta.test.npy' % model)).astype(np.float32)
 lnspec_valid = np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.test.npy' % model))[:, wave_bins[i_wave]]
+
+if model == 'nmf': 
+    theta_valid = sps_prior.untransform(theta_valid)
 
 # get pca for wavebin 
 pca_valid = tf.convert_to_tensor(PCABasis.PCA.transform((lnspec_valid - PCABasis.spectrum_shift)/PCABasis.spectrum_scale).astype(np.float32))
