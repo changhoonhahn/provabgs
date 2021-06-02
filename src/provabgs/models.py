@@ -638,6 +638,9 @@ class NMF(Model):
         self._burst = burst
         self._iso_unc = iso_unc
         self._emulator = emulator 
+        # metallicity range set by MIST isochrone
+        self._Z_min = 4.49043431e-05
+        self._Z_max = 4.49043431e-02
         super().__init__(cosmo=cosmo) # initializes the model
 
     def _emu(self, tt, tage): 
@@ -820,7 +823,7 @@ class NMF(Model):
 
         # get metallicity at tburst 
         zburst = np.sum(np.array([tt_zh[i] * self._zh_basis[i](tburst) 
-            for i in range(self._N_nmf_zh)]))
+            for i in range(self._N_nmf_zh)])).clip(self._Z_min, self._Z_max) 
         
         if debug:
             print('zburst=%e' % zburst) 
@@ -906,11 +909,14 @@ class NMF(Model):
         dust2           = theta['dust2']
         dust_index      = theta['dust_index']
 
-        # [tburst, ZH coeff0, ZH coeff1, dust1, dust2, dust_index]
+        # get metallicity at tburst 
+        zburst = np.sum(np.array([tt_zh[i] * self._zh_basis[i](tburst) 
+            for i in range(self._N_nmf_zh)])).clip(self._Z_min, self._Z_max) 
+
+        # [tburst, Zburst, dust1, dust2, dust_index]
         tt = np.array([
             tburst, 
-            theta['gamma1_zh'], 
-            theta['gamma2_zh'], 
+            zburst, 
             theta['dust1'], 
             theta['dust2'], 
             theta['dust_index']]).flatten()
@@ -1125,7 +1131,8 @@ class NMF(Model):
         _z_basis = np.array([self._zh_basis[i](t) for i in range(self._N_nmf_zh)]) 
 
         # get metallicity history
-        zh = np.sum(np.array([tt_zh[:,i][:,None] * _z_basis[i][None,:] for i in range(self._N_nmf_zh)]), axis=0) 
+        zh = np.sum(np.array([tt_zh[:,i][:,None] * _z_basis[i][None,:] for i in
+            range(self._N_nmf_zh)]), axis=0).clip(self._Z_min, self._Z_max) 
 
         if tt_zh.shape[0] == 1: return t, zh[0]
         return t, zh 

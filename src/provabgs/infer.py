@@ -1139,7 +1139,7 @@ class LogUniformPrior(Prior):
             return -np.inf
 
     def sample(self): 
-        return np.array([10**self._random.uniform(np.log10(mi), np.log10(ma)) for (mi, ma) in zip(self.min, self.max)])
+        return np.array([10**self._random.uniform(np.log10(mi), np.log10(ma)) for mi, ma in zip(self.min, self.max)])
 
 
 class GaussianPrior(Prior): 
