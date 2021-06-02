@@ -23,8 +23,7 @@ def divide_trainingset_3wavebins(name, batch0, batch1):
       2. 4500 < wave < 6500
       3. 6500 < wave 
     '''
-    if name == 'burst': 
-        dat_dir='/global/cscratch1/sd/chahah/_burst_tmp/'
+    dat_dir='/global/cscratch1/sd/chahah/provabgs/emulator/' # hardcoded to NERSC directory 
 
     # fsps wavelength 
     fwave   = os.path.join(dat_dir, 'wave_fsps.npy') 
@@ -94,7 +93,7 @@ def train_pca_3wavebins(name, batch0, batch1, n_pca, i_bin):
 
     '''
     if os.environ['machine'] == 'cori': 
-        dat_dir='/global/cscratch1/sd/chahah/provabgs/' # hardcoded to NERSC directory 
+        dat_dir='/global/cscratch1/sd/chahah/provabgs/emulator/' # hardcoded to NERSC directory 
     elif os.environ['machine'] == 'tiger': 
         dat_dir='/tigress/chhahn/provabgs/'
     # fsps wavelength 
@@ -105,8 +104,6 @@ def train_pca_3wavebins(name, batch0, batch1, n_pca, i_bin):
     wave_bin1 = (wave >= 4500) & (wave < 6500) 
     wave_bin2 = (wave >= 6500) 
 
-    if os.environ['machine'] == 'cori': 
-        dat_dir='/global/cscratch1/sd/chahah/_burst_tmp/'
     # batches of fsps spectra
     batches = range(batch0, batch1+1)
     
@@ -127,8 +124,11 @@ def train_pca_3wavebins(name, batch0, batch1, n_pca, i_bin):
     elif name == 'nmfburst': 
         # theta = [b1, b2, b3, b4, fburst, tburst, g1, g2, dust1, dust2, dust_index, zred]
         n_param = 12 
+    elif name == 'nmf': 
+        # theta = [b1, b2, b3, b4, g1, g2, dust1, dust2, dust_index, zred]
+        n_param = 10
     elif name == 'burst': 
-        n_param = 6
+        n_param = 5
 
     n_wave = np.sum(wave_bin) 
     
