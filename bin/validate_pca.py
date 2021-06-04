@@ -8,7 +8,7 @@ import matplotlib as mpl
 mpl.use('Agg') 
 import matplotlib.pyplot as plt
 
-model = 'burst' 
+model = 'nmf' # 'burst' 
 n_pcas = [50, 30, 30] 
 
 #model = 'nmf_bases'
@@ -23,16 +23,18 @@ if model == 'nmf_bases':
     n_param = 10 
 elif model == 'nmfburst': 
     n_param = 12 
-elif model == 'burst':
-    n_param = 6 
+elif model == 'nmf': 
+    # theta = [b1, b2, b3, b4, g1, g2, dust1, dust2, dust_index, zred]
+    n_param = 10
+elif model == 'burst': 
+    n_param = 5
 else: 
     raise ValueError
 
-dat_dir='/tigress/chhahn/provabgs/'
-if 'NERSC_HOST' in os.environ: 
-    dat_dir = '/global/cscratch1/sd/chahah/provabgs/'
-    if model == 'burst': 
-        dat_dir = '/global/cscratch1/sd/chahah/_burst_tmp/'
+batches = '0_99'
+
+if os.environ['machine'] == 'cori': 
+    dat_dir='/global/cscratch1/sd/chahah/provabgs/emulator/' # hardcoded to NERSC directory 
 
 # read in wavelenght values 
 wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy'))
@@ -65,7 +67,7 @@ for i in range(len(n_pcas)):
             parameter_selection=None) # pass an optional function that takes in parameter vector(s) and returns True/False for any extra parameter cuts we want to impose on the training sample (eg we may want to restrict the parameter ranges)
     
     fpca = os.path.join(dat_dir, 
-            'fsps.%s.seed0_499.%iw%i.pca%i.hdf5' % (model, len(n_pcas), i, n_pcas[i]))
+            'fsps.%s.seed%s.%iw%i.pca%i.hdf5' % (model, batches, len(n_pcas), i, n_pcas[i]))
     print('  loading %s' % fpca)
     PCABasis._load_from_file(fpca) 
     PCABases.append(PCABasis)

@@ -833,6 +833,32 @@ class desiMCMC(MCMC):
     
 
 # --- priors --- 
+def default_NMF_prior(burst=True, stellar_evol_offset=True): 
+    ''' default prior for NMF model
+    '''
+    prior_list = [
+            UniformPrior(8., 12., label='sed'),
+            FlatDirichletPrior(4, label='sed')   # flat dirichilet priors
+            ]
+    if burst: 
+        prior_list.append(UniformPrior(0., 1., label='sed')) # burst fraction
+        prior_list.append(UniformPrior(0., 13.27, label='sed')) # tburst
+    
+    prior_list.append(UniformPrior(6.9e-5, 7.3e-3, label='sed')) # uniform priors on ZH coeff
+    prior_list.append(UniformPrior(6.9e-5, 7.3e-3, label='sed')) # uniform priors on ZH coeff
+    prior_list.append(UniformPrior(0., 3., label='sed'))        # uniform priors on dust1
+    prior_list.append(UniformPrior(0., 3., label='sed'))        # uniform priors on dust2
+    prior_list.append(UniformPrior(-2.2, 0.4, label='sed'))     # uniform priors on dust_index
+    
+    if stellar_evol_offset:
+        # set prior
+        prior_list.append(GaussianPrior(0., 4.3**2, label='sed'))
+        prior_list.append(GaussianPrior(0., 2.5**2, label='sed'))
+        prior_list.append(GaussianPrior(0., 1.7**2, label='sed'))
+        
+    return load_priors(prior_list) 
+
+
 def load_priors(list_of_prior_obj): 
     ''' load list of `infer.Prior` class objects into a PriorSeq object
 
@@ -1090,6 +1116,30 @@ class UniformPrior(Prior):
 
     def sample(self): 
         return np.array([self._random.uniform(mi, ma) for (mi, ma) in zip(self.min, self.max)])
+
+
+class LogUniformPrior(Prior): 
+    ''' log uniform tophat prior
+    
+    '''
+    def __init__(self, _min, _max, label=None):
+        super().__init__(label=label)
+        
+        self.min = np.atleast_1d(_min)
+        self.max = np.atleast_1d(_max)
+        self.ndim = self.min.shape[0]
+        self.ndim_sampling = self.ndim
+        assert self.min.shape[0] == self.max.shape[0]
+        assert np.all(self.min <= self.max)
+        
+    def lnPrior(self, theta):
+        if np.all(theta <= self.max) and np.all(theta >= self.min): 
+            return 0.
+        else:
+            return -np.inf
+
+    def sample(self): 
+        return np.array([10**self._random.uniform(np.log10(mi), np.log10(ma)) for mi, ma in zip(self.min, self.max)])
 
 
 class GaussianPrior(Prior): 
