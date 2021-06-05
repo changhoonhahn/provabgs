@@ -7,6 +7,8 @@ import os, sys
 import pickle
 import numpy as np
 
+from provabgs import infer as Infer
+
 from speculator import SpectrumPCA
 from speculator import Speculator
 
@@ -28,13 +30,14 @@ import matplotlib.pyplot as plt
 #archs = ['10x256', '10x256', '10x256', '10x256', '10x256', '10x256'] # architectures
 
 model = 'burst'
+#model = 'nmf'
 n_pcas = [50, 30, 30]
 archs = ['8x256', '8x256', '8x256'] # architectures
 
-nbatch = 500 
+nbatch = 100 
 desc = 'nbatch250'
 #dat_dir = '/Users/chahah/data/provabgs/'
-dat_dir = '/tigress/chhahn/provabgs/'
+dat_dir = '/tigress/chhahn/provabgs/emulator/'
 
 # read in wavelenght values 
 wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy'))
@@ -81,6 +84,18 @@ theta_test      = np.load(os.path.join(dat_dir,
 _lnspec_test    = np.load(os.path.join(dat_dir, 
     'fsps.%s.lnspectrum.test.npy' % model))
 
+if model == 'nmf': 
+    sps_prior = Infer.load_priors([
+        Infer.FlatDirichletPrior(4, label='sed'),       # flat dirichilet priors
+        Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on ZH coeff
+        Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on ZH coeff
+        Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
+        Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust2
+        Infer.UniformPrior(-3., 1., label='sed'),     # uniform priors on dust_index 
+        Infer.UniformPrior(0., 0.6, label='sed')       # uniformly sample redshift
+        ])
+
+    theta_test = sps_prior.untransform(theta_test).astype(np.float32)
 print(theta_test.shape)
 
 lnspec_test = []
