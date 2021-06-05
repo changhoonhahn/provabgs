@@ -72,7 +72,7 @@ _pca_train = np.load(os.path.join(dat_dir,
 
 if model == 'nmf': 
     sps_prior = Infer.load_priors([
-        Infer.FlatDirichletPrior(ncomp, label='sed'),       # flat dirichilet priors
+        Infer.FlatDirichletPrior(4, label='sed'),       # flat dirichilet priors
         Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on ZH coeff
         Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on ZH coeff
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
@@ -82,17 +82,22 @@ if model == 'nmf':
         ])
     # untranform 
     _theta_train = sps_prior.untransform(_theta_train)
-    n_params = 9 
+    n_param = 9 
+
+# get parameter shift and scale 
+theta_shift = tf.convert_to_tensor(np.mean(_theta_train, axis=0).astype(np.float32))
+theta_scale = tf.convert_to_tensor(np.std(_theta_train, axis=0).astype(np.float32))
 
 theta_train = tf.convert_to_tensor(_theta_train.astype(np.float32))
 pca_train = tf.convert_to_tensor(_pca_train.astype(np.float32))
 
 # validation theta and pca
-theta_valid = np.load(os.path.join(dat_dir, 'fsps.%s.theta.test.npy' % model)).astype(np.float32)
+_theta_valid = np.load(os.path.join(dat_dir, 'fsps.%s.theta.test.npy' % model))
 lnspec_valid = np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.test.npy' % model))[:, wave_bins[i_wave]]
 
 if model == 'nmf': 
-    theta_valid = sps_prior.untransform(theta_valid)
+    _theta_valid = sps_prior.untransform(_theta_valid)
+theta_valid = tf.convert_to_tensor(_theta_valid.astype(np.float32))
 
 # get pca for wavebin 
 pca_valid = tf.convert_to_tensor(PCABasis.PCA.transform((lnspec_valid - PCABasis.spectrum_shift)/PCABasis.spectrum_scale).astype(np.float32))
@@ -103,8 +108,8 @@ speculator = Speculator(
         n_parameters=n_param, # number of model parameters
         wavelengths=wave[wave_bins[i_wave]], # array of wavelengths
         pca_transform_matrix=PCABasis.pca_transform_matrix,
-        parameters_shift=PCABasis.parameters_shift,
-        parameters_scale=PCABasis.parameters_scale,
+        parameters_shift=theta_shift, # PCABasis.parameters_shift,
+        parameters_scale=theta_scale, # PCABasis.parameters_scale,
         pca_shift=PCABasis.pca_shift,
         pca_scale=PCABasis.pca_scale,
         spectrum_shift=PCABasis.spectrum_shift,
