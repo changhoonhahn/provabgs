@@ -29,10 +29,13 @@ import matplotlib.pyplot as plt
 #n_pcas = [30, 30, 30, 30, 30, 30]
 #archs = ['10x256', '10x256', '10x256', '10x256', '10x256', '10x256'] # architectures
 
-model = 'burst'
 #model = 'nmf'
-n_pcas = [50, 30, 30]
+#archs = ['8x256', '8x256', '8x256'] # architectures
+#n_pcas = [50, 30, 30]
+
+model = 'burst'
 archs = ['8x256', '8x256', '8x256'] # architectures
+n_pcas = [50, 30, 30]
 
 nbatch = 100 
 desc = 'nbatch250'
@@ -96,7 +99,9 @@ if model == 'nmf':
         ])
 
     theta_test = sps_prior.untransform(theta_test).astype(np.float32)
-print(theta_test.shape)
+elif model == 'burst': 
+    # convert Z to log Z 
+    theta_test[:,1] = np.log10(theta_test[:,1])
 
 lnspec_test = []
 for wave_bin in wave_bins: 

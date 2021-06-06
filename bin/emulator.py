@@ -65,9 +65,9 @@ PCABasis._load_from_file(
 
 #-------------------------------------------------------
 # training theta and pca 
-_theta_train = np.load(os.path.join(dat_dir,
+_thetas = np.load(os.path.join(dat_dir,
     'fsps.%s.seed0_%i.%iw%i.pca%i_parameters.npy' % (model, nbatch-1, N_wave, i_wave, n_pcas)))
-_pca_train = np.load(os.path.join(dat_dir,
+_pcas = np.load(os.path.join(dat_dir,
     'fsps.%s.seed0_%i.%iw%i.pca%i_pca.npy' % (model, nbatch-1, N_wave, i_wave, n_pcas)))
 
 if model == 'nmf': 
@@ -81,26 +81,26 @@ if model == 'nmf':
         Infer.UniformPrior(0., 0.6, label='sed')       # uniformly sample redshift
         ])
     # untranform 
-    _theta_train = sps_prior.untransform(_theta_train)
+    _thetas = sps_prior.untransform(_thetas)
     n_param = 9 
+elif model == 'burst': 
+    # convert Z to log Z 
+    _thetas[:,1] = np.log10(_thetas[:,1]) 
 
 # get parameter shift and scale 
-theta_shift = tf.convert_to_tensor(np.mean(_theta_train, axis=0).astype(np.float32))
-theta_scale = tf.convert_to_tensor(np.std(_theta_train, axis=0).astype(np.float32))
+theta_shift = tf.convert_to_tensor(np.mean(_thetas, axis=0).astype(np.float32))
+theta_scale = tf.convert_to_tensor(np.std(_thetas, axis=0).astype(np.float32))
 
-theta_train = tf.convert_to_tensor(_theta_train.astype(np.float32))
-pca_train = tf.convert_to_tensor(_pca_train.astype(np.float32))
+Ntrain = int(0.9 * _thetas.shape[0])
+Nvalid = _thetas.shape[0] - Ntrain 
+print('Ntrain = %i, Nvalid = %i' % (Ntrain, Nvalid))
+
+theta_train = tf.convert_to_tensor(_thetas[:Ntrain,:].astype(np.float32))
+pca_train = tf.convert_to_tensor(_pcas[:Ntrain,:].astype(np.float32))
 
 # validation theta and pca
-_theta_valid = np.load(os.path.join(dat_dir, 'fsps.%s.theta.test.npy' % model))
-lnspec_valid = np.load(os.path.join(dat_dir, 'fsps.%s.lnspectrum.test.npy' % model))[:, wave_bins[i_wave]]
-
-if model == 'nmf': 
-    _theta_valid = sps_prior.untransform(_theta_valid)
-theta_valid = tf.convert_to_tensor(_theta_valid.astype(np.float32))
-
-# get pca for wavebin 
-pca_valid = tf.convert_to_tensor(PCABasis.PCA.transform((lnspec_valid - PCABasis.spectrum_shift)/PCABasis.spectrum_scale).astype(np.float32))
+theta_valid = tf.convert_to_tensor(_thetas[Ntrain:,:].astype(np.float32))
+pca_valid = tf.convert_to_tensor(_pcas[Ntrain:,:].astype(np.float32))
 
 #-------------------------------------------------------
 # train Speculator
