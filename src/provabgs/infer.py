@@ -833,7 +833,7 @@ class desiMCMC(MCMC):
     
 
 # --- priors --- 
-def default_NMF_prior(burst=True, stellar_evol_offset=True): 
+def default_NMF_prior(burst=True): 
     ''' default prior for NMF model
     '''
     prior_list = [
@@ -842,20 +842,14 @@ def default_NMF_prior(burst=True, stellar_evol_offset=True):
             ]
     if burst: 
         prior_list.append(UniformPrior(0., 1., label='sed')) # burst fraction
-        prior_list.append(UniformPrior(0., 13.27, label='sed')) # tburst
+        prior_list.append(LogUniformPrior(1e-2, 13.27, label='sed')) # tburst
     
-    prior_list.append(UniformPrior(6.9e-5, 7.3e-3, label='sed')) # uniform priors on ZH coeff
-    prior_list.append(UniformPrior(6.9e-5, 7.3e-3, label='sed')) # uniform priors on ZH coeff
+    prior_list.append(UniformPrior(4.5e-5, 4.5e-2, label='sed')) # uniform priors on ZH coeff
+    prior_list.append(UniformPrior(4.5e-5, 4.5e-2, label='sed')) # uniform priors on ZH coeff
     prior_list.append(UniformPrior(0., 3., label='sed'))        # uniform priors on dust1
     prior_list.append(UniformPrior(0., 3., label='sed'))        # uniform priors on dust2
     prior_list.append(UniformPrior(-2.2, 0.4, label='sed'))     # uniform priors on dust_index
     
-    if stellar_evol_offset:
-        # set prior
-        prior_list.append(GaussianPrior(0., 4.3**2, label='sed'))
-        prior_list.append(GaussianPrior(0., 2.5**2, label='sed'))
-        prior_list.append(GaussianPrior(0., 1.7**2, label='sed'))
-        
     return load_priors(prior_list) 
 
 
