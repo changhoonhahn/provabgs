@@ -141,8 +141,11 @@ def train_pca_3wavebins(name, batch0, batch1, n_pca, i_bin):
             parameter_filenames=fthetas, # list of filenames containing the corresponding parameter values
             parameter_selection=None) 
 
+    print('compute spectrum shift and scale') 
     PCABasis.compute_spectrum_parameters_shift_and_scale() # computes shifts and scales for (log) spectra and parameters
+    print('train pca') 
     PCABasis.train_pca()
+    print('transform and stack training data') 
     PCABasis.transform_and_stack_training_data(
             os.path.join(dat_dir, 'fsps.%s.seed%i_%i.3w%i.pca%i' % (name, batch0, batch1, i_bin, n_pca)), 
             retain=True) 
@@ -198,9 +201,12 @@ def train_pca_6wavebins(name, batch0, batch1, n_pca, i_bin):
             spectrum_filenames=fspecs,  # list of filenames containing the (un-normalized) log spectra for training the PCA
             parameter_filenames=fthetas, # list of filenames containing the corresponding parameter values
             parameter_selection=None) 
-
+    
+    print('compute spectrum shift and scale') 
     PCABasis.compute_spectrum_parameters_shift_and_scale() # computes shifts and scales for (log) spectra and parameters
+    print('train pca') 
     PCABasis.train_pca()
+    print('transform and stack training data') 
     PCABasis.transform_and_stack_training_data(
             os.path.join(dat_dir, 'fsps.%s.seed%i_%i.6w%i.pca%i' % (name, batch0, batch1, i_bin, n_pca)), 
             retain=True) 
