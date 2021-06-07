@@ -844,8 +844,8 @@ def default_NMF_prior(burst=True):
         prior_list.append(UniformPrior(0., 1., label='sed')) # burst fraction
         prior_list.append(LogUniformPrior(1e-2, 13.27, label='sed')) # tburst
     
-    prior_list.append(UniformPrior(4.5e-5, 4.5e-2, label='sed')) # uniform priors on ZH coeff
-    prior_list.append(UniformPrior(4.5e-5, 4.5e-2, label='sed')) # uniform priors on ZH coeff
+    prior_list.append(LogUniformPrior(4.5e-5, 4.5e-2, label='sed')) # uniform priors on ZH coeff
+    prior_list.append(LogUniformPrior(4.5e-5, 4.5e-2, label='sed')) # uniform priors on ZH coeff
     prior_list.append(UniformPrior(0., 3., label='sed'))        # uniform priors on dust1
     prior_list.append(UniformPrior(0., 3., label='sed'))        # uniform priors on dust2
     prior_list.append(UniformPrior(-2.2, 0.4, label='sed'))     # uniform priors on dust_index
