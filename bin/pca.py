@@ -87,7 +87,7 @@ def train_pca_wavebin(name, batch0, batch1, n_pca, i_bin):
 
     n_wave = np.sum(wave_bin) 
 
-    print(os.path.join(dat_dir, 'fsps.%s.seed%i_%i.3w%i.pca%i.hdf5' % (name, batch0, batch1, i_bin, n_pca)))
+    print(os.path.join(dat_dir, 'fsps.%s.seed%i_%i.w%i.pca%i.hdf5' % (name, batch0, batch1, i_bin, n_pca)))
     
     # train PCA basis 
     PCABasis = SpectrumPCA(
@@ -103,11 +103,11 @@ def train_pca_wavebin(name, batch0, batch1, n_pca, i_bin):
     PCABasis.train_pca()
     print('transform and stack') 
     PCABasis.transform_and_stack_training_data(
-            os.path.join(dat_dir, 'fsps.%s.seed%i_%i.3w%i.pca%i' % (name, batch0, batch1, i_bin, n_pca)), 
+            os.path.join(dat_dir, 'fsps.%s.seed%i_%i.w%i.pca%i' % (name, batch0, batch1, i_bin, n_pca)), 
             retain=True) 
     # save to file 
     PCABasis._save_to_file(
-            os.path.join(dat_dir, 'fsps.%s.seed%i_%i.3w%i.pca%i.hdf5' % (name, batch0, batch1, i_bin, n_pca))
+            os.path.join(dat_dir, 'fsps.%s.seed%i_%i.w%i.pca%i.hdf5' % (name, batch0, batch1, i_bin, n_pca))
             )
     return None 
 
