@@ -30,8 +30,8 @@ def prior_burst():
     ''' prior on burst contribution 
     '''
     return Infer.load_priors([
-        Infer.UniformPrior(0., 13.8),                   # uniform priors tburst 
-        Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on ZH coeff
+        Infer.LogUniformPrior(1e-2, 13.27),                 # log uniform priors on tburst from 10Myr to 13.27 Gyr
+        Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on Z burst
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust2
         Infer.UniformPrior(-3., 1., label='sed')     # uniform priors on dust_index 
@@ -146,12 +146,12 @@ def fsps_burst_prior_samples(ibatch, ncpu=1):
         fspectrum = os.path.join(dat_dir, 
                 'fsps.%s.lnspectrum.seed%i.npy' % (name, ibatch)) 
 
-    if os.path.isfile(ftheta) and os.path.isfile(fspectrum): 
-        print() 
-        print('--- batch %s already exists ---' % str(ibatch))
-        print('--- do not overwrite ---')
-        print()  
-        return None 
+    #if os.path.isfile(ftheta) and os.path.isfile(fspectrum): 
+    #    print() 
+    #    print('--- batch %s already exists ---' % str(ibatch))
+    #    print('--- do not overwrite ---')
+    #    print()  
+    #    return None 
     
     # sample prior for burst 
     thetas = np.array([priors.sample() for i in range(nspec)])

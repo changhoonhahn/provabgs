@@ -8,8 +8,13 @@ import matplotlib as mpl
 mpl.use('Agg') 
 import matplotlib.pyplot as plt
 
-model = 'burst' 
-n_pcas = [50, 30, 30] 
+model = 'nmf' # 'burst' 
+n_pcas = [30, 50, 50, 30] 
+batches = '0_99'
+
+#model = 'burst' 
+#n_pcas = [50, 30, 30] 
+#batches = '0_199'
 
 #model = 'nmf_bases'
 #n_pcas = [50, 30, 30] 
@@ -23,33 +28,22 @@ if model == 'nmf_bases':
     n_param = 10 
 elif model == 'nmfburst': 
     n_param = 12 
-elif model == 'burst':
-    n_param = 6 
+elif model == 'nmf': 
+    # theta = [b1, b2, b3, b4, g1, g2, dust1, dust2, dust_index, zred]
+    n_param = 10
+elif model == 'burst': 
+    n_param = 5
 else: 
     raise ValueError
 
-dat_dir='/tigress/chhahn/provabgs/'
-if 'NERSC_HOST' in os.environ: 
-    dat_dir = '/global/cscratch1/sd/chahah/provabgs/'
-    if model == 'burst': 
-        dat_dir = '/global/cscratch1/sd/chahah/_burst_tmp/'
+if os.environ['machine'] == 'cori': 
+    dat_dir='/global/cscratch1/sd/chahah/provabgs/emulator/' # hardcoded to NERSC directory 
 
 # read in wavelenght values 
 wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy'))
 
-if len(n_pcas) == 6: 
-    wave_bins = [
-            (wave < 3000),
-            (wave >= 3000) & (wave < 4000),
-            (wave >= 4000) & (wave < 5000),
-            (wave >= 5000) & (wave < 6000),
-            (wave >= 6000) & (wave < 7000),
-            (wave >= 7000)]
-elif len(n_pcas) == 3: 
-    wave_bins = [
-            (wave < 4500), 
-            (wave >= 4500) & (wave < 6500),
-            (wave >= 6500)]
+wave_bins = [(wave < 3600), (wave >= 3600) & (wave < 5500), (wave >= 5500) &
+        (wave < 7410), (wave >= 7410)]
 
 # read in SpectrumPCA objects
 PCABases = []
@@ -65,7 +59,7 @@ for i in range(len(n_pcas)):
             parameter_selection=None) # pass an optional function that takes in parameter vector(s) and returns True/False for any extra parameter cuts we want to impose on the training sample (eg we may want to restrict the parameter ranges)
     
     fpca = os.path.join(dat_dir, 
-            'fsps.%s.seed0_499.%iw%i.pca%i.hdf5' % (model, len(n_pcas), i, n_pcas[i]))
+            'fsps.%s.seed%s.w%i.pca%i.hdf5' % (model, batches, i, n_pcas[i]))
     print('  loading %s' % fpca)
     PCABasis._load_from_file(fpca) 
     PCABases.append(PCABasis)
@@ -94,6 +88,38 @@ for i in range(5):
     print(lnspec_recon[i,::1000])
     print(lnspec_test[i,::1000])
     print()
+
+
+# plot the fraction error  on ln(spec)
+frac_dspectrum = 1. - lnspec_recon / lnspec_test 
+print(frac_dspectrum[::1000])
+frac_dspectrum_quantiles = np.nanquantile(frac_dspectrum, 
+        [0.0005, 0.005, 0.025, 0.5, 0.975, 0.995, 0.9995], axis=0)
+
+fig = plt.figure(figsize=(15,5))
+sub = fig.add_subplot(111)
+sub.fill_between(wave, frac_dspectrum_quantiles[0],
+        frac_dspectrum_quantiles[6], fc='C0', ec='none', alpha=0.1, label='99.9%')
+sub.fill_between(wave, frac_dspectrum_quantiles[1],
+        frac_dspectrum_quantiles[5], fc='C0', ec='none', alpha=0.2, label='99%')
+sub.fill_between(wave, frac_dspectrum_quantiles[2],
+        frac_dspectrum_quantiles[4], fc='C0', ec='none', alpha=0.3, label='95%')
+sub.plot(wave, frac_dspectrum_quantiles[3], c='C0', ls='-') 
+sub.plot(wave, np.zeros(len(wave)), c='k', ls=':') 
+for wave_bin in wave_bins: 
+    sub.vlines(wave[wave_bin][-1], -0.1, 0.1, color='k', linestyle=':')
+
+# mark +/- 1%
+sub.plot(wave, 0.01 * np.ones(len(wave)), c='k', ls='--', lw=0.5)
+sub.plot(wave, -0.01 * np.ones(len(wave)), c='k', ls='--', lw=0.5)
+
+sub.legend(loc='upper right', fontsize=20)
+sub.set_xlabel('wavelength', fontsize=25) 
+sub.set_xlim(2.3e3, 1e4)
+sub.set_ylabel(r'$(\log f_{\rm pca} - \log f_{\rm fsps})/\log f_{\rm fsps}$', fontsize=25) 
+sub.set_ylim(-0.03, 0.03) 
+
+fig.savefig('fsps.%s.valid_pca.%s.lnfrac.png' % (model, '_'.join([str(np) for np in n_pcas])), bbox_inches='tight') 
 
 
 # plot the fraction error 
