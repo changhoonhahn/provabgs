@@ -13,12 +13,11 @@ from speculator import Speculator
 #-------------------------------------------------------
 model = sys.argv[1]
 nbatch = int(sys.argv[2])
-N_wave = int(sys.argv[3])
-i_wave = int(sys.argv[4]) 
-n_pcas = int(sys.argv[5]) 
-Nlayer = int(sys.argv[6]) 
-Nunits = int(sys.argv[7]) 
-b_size = int(sys.argv[8]) 
+i_wave = int(sys.argv[3]) 
+n_pcas = int(sys.argv[4]) 
+Nlayer = int(sys.argv[5]) 
+Nunits = int(sys.argv[6]) 
+b_size = int(sys.argv[7]) 
 desc = 'nbatch%i' % b_size
 #-------------------------------------------------------
 assert os.environ['machine'] == 'tiger'
@@ -27,48 +26,38 @@ assert os.environ['machine'] == 'tiger'
 dat_dir='/tigress/chhahn/provabgs/emulator/'
 wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy')) 
 
-if N_wave == 6: 
-    wave_bins = [
-            (wave < 3000),
-            (wave >= 3000) & (wave < 4000),
-            (wave >= 4000) & (wave < 5000),
-            (wave >= 5000) & (wave < 6000),
-            (wave >= 6000) & (wave < 7000),
-            (wave >= 7000)]
-elif N_wave == 3: 
-    wave_bins = [
-            (wave < 4500), 
-            (wave >= 4500) & (wave < 6500),
-            (wave >= 6500)]
+wave_bins = [
+        (wave < 3600), 
+        (wave >= 3600) & (wave < 5500), 
+        (wave >= 5500) & (wave < 7410), 
+        (wave >= 7410)]
 
 n_hidden = [Nunits for i in range(Nlayer)]
 n_wave = np.sum(wave_bins[i_wave]) 
+
 #-------------------------------------------------------
-if model == 'nmf_bases': n_param = 10
-elif model == 'nmfburst': n_param = 12
-elif model == 'nmf': n_param = 10
+if model == 'nmf': n_param = 10
 elif model == 'burst': n_param = 5
 else: raise ValueError
 
 # load trained PCA basis object
 print('loading PCA bases')
+fpca = os.path.join(dat_dir, 'fsps.%s.seed0_%i.w%i.pca%i.hdf5' % (model, nbatch-1, i_wave, n_pcas))
 PCABasis = SpectrumPCA(
         n_parameters=n_param,       # number of parameters
-        n_wavelengths=n_wave, # number of wavelength values
+        n_wavelengths=n_wave,       # number of wavelength values
         n_pcas=n_pcas,              # number of pca coefficients to include in the basis
-        spectrum_filenames=None,  # list of filenames containing the (un-normalized) log spectra for training the PCA
-        parameter_filenames=[], # list of filenames containing the corresponding parameter values
-        parameter_selection=None) # pass an optional function that takes in parameter vector(s) and returns True/False for any extra parameter cuts we want to impose on the training sample (eg we may want to restrict the parameter ranges)
-PCABasis._load_from_file(
-        os.path.join(dat_dir, 
-            'fsps.%s.seed0_%i.%iw%i.pca%i.hdf5' % (model, nbatch-1, N_wave, i_wave, n_pcas)))
+        spectrum_filenames=None,    # list of filenames containing the (un-normalized) log spectra for training the PCA
+        parameter_filenames=[],     # list of filenames containing the corresponding parameter values
+        parameter_selection=None)   # pass an optional function that takes in parameter vector(s) and returns True/False for any extra parameter cuts we want to impose on the training sample (eg we may want to restrict the parameter ranges)
+PCABasis._load_from_file(fpca)
 
 #-------------------------------------------------------
 # training theta and pca 
 _thetas = np.load(os.path.join(dat_dir,
-    'fsps.%s.seed0_%i.%iw%i.pca%i_parameters.npy' % (model, nbatch-1, N_wave, i_wave, n_pcas)))
+    'fsps.%s.seed0_%i.w%i.pca%i_parameters.npy' % (model, nbatch-1, i_wave, n_pcas)))
 _pcas = np.load(os.path.join(dat_dir,
-    'fsps.%s.seed0_%i.%iw%i.pca%i_pca.npy' % (model, nbatch-1, N_wave, i_wave, n_pcas)))
+    'fsps.%s.seed0_%i.w%i.pca%i_pca.npy' % (model, nbatch-1, i_wave, n_pcas)))
 
 if model == 'nmf': 
     sps_prior = Infer.load_priors([
@@ -83,9 +72,9 @@ if model == 'nmf':
     # untranform 
     _thetas = sps_prior.untransform(_thetas)
     n_param = 9 
-elif model == 'burst': 
-    # convert Z to log Z 
-    _thetas[:,1] = np.log10(_thetas[:,1]) 
+#elif model == 'burst': 
+#    # convert Z to log Z 
+#    _thetas[:,1] = np.log10(_thetas[:,1]) 
 
 # get parameter shift and scale 
 theta_shift = tf.convert_to_tensor(np.mean(_thetas, axis=0).astype(np.float32))
@@ -96,11 +85,11 @@ Nvalid = _thetas.shape[0] - Ntrain
 print('Ntrain = %i, Nvalid = %i' % (Ntrain, Nvalid))
 
 theta_train = tf.convert_to_tensor(_thetas[:Ntrain,:].astype(np.float32))
-pca_train = tf.convert_to_tensor(_pcas[:Ntrain,:].astype(np.float32))
+pca_train   = tf.convert_to_tensor(_pcas[:Ntrain,:].astype(np.float32))
 
 # validation theta and pca
 theta_valid = tf.convert_to_tensor(_thetas[Ntrain:,:].astype(np.float32))
-pca_valid = tf.convert_to_tensor(_pcas[Ntrain:,:].astype(np.float32))
+pca_valid   = tf.convert_to_tensor(_pcas[Ntrain:,:].astype(np.float32))
 
 #-------------------------------------------------------
 # train Speculator
@@ -119,7 +108,7 @@ speculator = Speculator(
         optimizer=tf.keras.optimizers.Adam()) # optimizer for model training
 
 # cooling schedule
-lr = [1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6, 1e-6] # [1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6]
+lr = [1e-3, 5e-4, 1e-4, 5e-5, 1e-5, 5e-6, 1e-6]
 batch_size = [b_size for _ in lr]
 gradient_accumulation_steps = [1 for _ in lr] # split the largest batch size into 10 when computing gradients to avoid memory overflow
 
@@ -128,11 +117,10 @@ patience = 20
 
 # writeout loss 
 _floss = os.path.join(dat_dir, 
-        'fsps.%s.seed0_%i.%iw%i.pca%i.%ix%i.%s.loss.dat' % 
-        (model, nbatch-1, N_wave, i_wave, n_pcas, Nlayer, Nunits, desc))
+        'fsps.%s.seed0_%i.w%i.pca%i.%ix%i.%s.loss.dat' % 
+        (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits, desc))
 floss = open(_floss, 'w')
 floss.close()
-
 
 # train using cooling/heating schedule for lr/batch-size
 for i in range(len(lr)):
@@ -182,6 +170,6 @@ for i in range(len(lr)):
         if early_stopping_counter >= patience:
             speculator.update_emulator_parameters()
             speculator.save(os.path.join(dat_dir,
-                'fsps.%s.seed0_%i.%iw%i.pca%i.%ix%i.%s' % 
-                (model, nbatch-1, N_wave, i_wave, n_pcas, Nlayer, Nunits, desc)))
+                'fsps.%s.seed0_%i.w%i.pca%i.%ix%i.%s' % 
+                (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits, desc)))
             print('Validation loss = %s' % str(best_loss))
