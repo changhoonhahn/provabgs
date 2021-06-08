@@ -918,13 +918,6 @@ class NMF(Model):
                     'dust2',
                     'dust_index']
 
-        # isochrone uncertainties 
-        if self._iso_unc: 
-            self._parameters.append('iso_unc0')
-            self._parameters.append('iso_unc1')
-            self._parameters.append('iso_unc2')
-            self._load_iso_unc_pca() 
-
         if not self._emulator: 
             self._sps_model = self._fsps 
         else: 
