@@ -8,13 +8,13 @@ import matplotlib as mpl
 mpl.use('Agg') 
 import matplotlib.pyplot as plt
 
-model = 'nmf' # 'burst' 
-n_pcas = [30, 50, 50, 30] 
-batches = '0_99'
+#model = 'nmf' 
+#n_pcas = [30, 50, 50, 30] 
+#batches = '0_99'
 
-#model = 'burst' 
-#n_pcas = [50, 30, 30] 
-#batches = '0_199'
+model = 'burst' 
+n_pcas = [30, 50, 50, 30] 
+batches = '0_199'
 
 #model = 'nmf_bases'
 #n_pcas = [50, 30, 30] 
@@ -42,8 +42,10 @@ if os.environ['machine'] == 'cori':
 # read in wavelenght values 
 wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy'))
 
-wave_bins = [(wave < 3600), (wave >= 3600) & (wave < 5500), (wave >= 5500) &
-        (wave < 7410), (wave >= 7410)]
+wave_bins = [(wave < 3600), 
+        (wave >= 3600) & (wave < 5500), 
+        (wave >= 5500) & (wave < 7410), 
+        (wave >= 7410)]
 
 # read in SpectrumPCA objects
 PCABases = []
