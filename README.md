@@ -4,6 +4,8 @@
 `provabgs` is a python package for fitting photometry and spectra from the Dark
 Energy Spectroscopic Instrument Bright Galaxy Survey (DESI BGS). 
 
+## Installation
+
 
 ## Team
 - ChangHoon Hahn (Princeton)
