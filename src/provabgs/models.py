@@ -359,7 +359,6 @@ class Model(object):
         return theta 
 
 
-
 class NMF(Model): 
     ''' SPS model with non-parametric star formation and metallicity histories
     and flexible dust attenuation model.  The SFH and ZH are based on
@@ -462,8 +461,9 @@ class NMF(Model):
             lum_burst = np.zeros(lum_ssp.shape)
             # if starburst is within the age of the galaxy 
             if tburst < tage and fburst > 0.: 
-                _w, _lum_burst = self._fsps_burst(tt)
-                lum_burst = _lum_burst[(_w > 2300.) & (_w < 60000.)]
+                lum_burst = np.exp(self._emu_burst(tt))
+                #_w, _lum_burst = self._fsps_burst(tt)
+                #lum_burst = _lum_burst[(_w > 2300.) & (_w < 60000.)]
 
             # renormalize NMF contribution  
             lum_ssp *= (1. - fburst) 
@@ -577,8 +577,9 @@ class NMF(Model):
         tt_zh = np.array([theta['gamma1_zh'], theta['gamma2_zh']])
 
         tburst = theta['tburst'] 
+        assert tburst > 1e-2, "burst currently only supported for tburst > 1e-2 Gyr"
 
-        dust1           = theta['dust1']
+        dust1           = 0. # no birth cloud attenuation for tage > 1e-2 Gyr
         dust2           = theta['dust2']
         dust_index      = theta['dust_index']
 
@@ -588,7 +589,7 @@ class NMF(Model):
         
         if debug:
             print('zburst=%e' % zburst) 
-            print('dust1=%f' % dust1) 
+            #print('dust1=%f' % dust1) 
             print('dust2=%f' % dust2) 
             print('dust_index=%f' % dust_index) 
     
@@ -652,7 +653,68 @@ class NMF(Model):
                 pca_transform_matrix_)*spectrum_scale_ + spectrum_shift_)
 
         return np.concatenate(logflux) 
-    
+   
+    def _emu_burst(self, tt, debug=False): 
+        ''' calculate the dust attenuated luminosity contribution from a SSP
+        that corresponds to the burst using an emulator. This spectrum is
+        normalized such that the total formed mass is 1 Msun, **not** fburst 
+
+        Notes
+        -----
+        * currently luminosity contribution is set to 0 if tburst > 13.27 due
+        to FSPS numerical accuracy  
+        '''
+        theta = self._parse_theta(tt) 
+        tt_zh = np.array([theta['gamma1_zh'], theta['gamma2_zh']])
+
+        tburst = theta['tburst'] 
+
+        if tburst > 13.27: 
+            warnings.warn('tburst > 13.27 Gyr returns 0s --- modify priors')
+            return np.zeros(len(self._nmf_emu_waves))
+        assert tburst > 1e-2, "burst currently only supported for tburst > 1e-2 Gyr"
+
+        #dust1           = theta['dust1']
+        dust2           = theta['dust2']
+        dust_index      = theta['dust_index']
+
+        # get metallicity at tburst 
+        zburst = np.sum(np.array([tt_zh[i] * self._zh_basis[i](tburst) 
+            for i in range(self._N_nmf_zh)])).clip(self._Z_min, self._Z_max) 
+
+        # input to emulator are [log tburst, kburst, dust2, dust_index]
+        tt = np.array([
+            np.log10(tburst), 
+            np.log10([zburst]), 
+            theta['dust2'], 
+            theta['dust_index']]).flatten()
+
+        logflux = [] 
+        for iwave in range(self._burst_n_emu): # wave bins
+            W_, b_, alphas_, betas_, parameters_shift_, parameters_scale_,\
+                    pca_shift_, pca_scale_, spectrum_shift_, spectrum_scale_,\
+                    pca_transform_matrix_, _, _, wavelengths, _, _, n_layers, _ =\
+                    self._burst_emu_params[iwave] 
+
+            # forward pass through the network
+            act = []
+            layers = [(tt - parameters_shift_)/parameters_scale_]
+            for i in range(n_layers-1):
+
+                # linear network operation
+                act.append(np.dot(layers[-1], W_[i]) + b_[i])
+
+                # pass through activation function
+                layers.append((betas_[i] + (1.-betas_[i])*1./(1.+np.exp(-alphas_[i]*act[-1])))*act[-1])
+
+            # final (linear) layer -> (normalized) PCA coefficients
+            layers.append(np.dot(layers[-1], W_[-1]) + b_[-1])
+
+            # rescale PCA coefficients, multiply out PCA basis -> normalized spectrum, shift and re-scale spectrum -> output spectrum
+            logflux.append(np.dot(layers[-1]*pca_scale_ + pca_shift_,
+                pca_transform_matrix_)*spectrum_scale_ + spectrum_shift_)
+        return np.concatenate(logflux) 
+
     def _load_emulator(self): 
         ''' read in pickle files that contains the parameters for the FSPS
         emulator that is split into wavelength bins
@@ -673,8 +735,25 @@ class NMF(Model):
 
             self._nmf_emu_params.append(params)
             self._nmf_emu_wave.append(params[13])
-
+        
         self._nmf_emu_waves = np.concatenate(self._nmf_emu_wave) 
+
+        # load burst emulator
+        f_nn = lambda npca, i: 'fsps.burst.seed0_199.w%i.pca%i.8x256.nbatch250.pkl' % (i, npca)
+        self._burst_n_emu = len(npcas)
+        self._burst_emu_params    = [] 
+        self._burst_emu_wave      = [] 
+
+        for i, npca in enumerate(npcas): 
+            fpkl = open(os.path.join(
+                os.path.dirname(os.path.realpath(__file__)), 'dat', 
+                f_nn(npca, i)), 'rb')
+            params = pickle.load(fpkl)
+
+            self._burst_emu_params.append(params)
+            self._burst_emu_wave.append(params[13])
+
+        self._burst_emu_waves = np.concatenate(self._burst_emu_wave) 
         return None 
 
     def SFH(self, tt, zred=None, tage=None, burst=True): 
