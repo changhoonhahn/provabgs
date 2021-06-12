@@ -467,8 +467,8 @@ class desiMCMC(MCMC):
     '''
     def __init__(self, model=None, flux_calib=None, prior=None, corrprior=None): 
         if model is None: # default Model class object 
-            from .models import DESIspeculator
-            self.model = DESIspeculator()
+            from .models import NMF
+            self.model = NMF(burst=False, emulator=True)
         else: 
             self.model = model
 
@@ -831,6 +831,46 @@ class desiMCMC(MCMC):
             mcmc.close() 
         return output 
     
+
+class nsaMCMC(desiMCMC): 
+    ''' MCMC inference object specifically designed for analyzing NSA UV and
+    optical photometry 
+    '''
+    def _get_bands(self, bands): 
+        ''' For specific `bands`, get the corresponding photometric bandpass
+        filters. 
+
+        
+        Returns
+        -------
+        filters : object 
+            `speclite.FilterResponse` that correspond to the specified `bands.
+        '''
+        if bands is None: 
+            return None
+        
+        if isinstance(bands, str): 
+            if bands == 'nsa': 
+                # load galex filters 
+                fuv = specFilter.load_filter(
+                        os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat', 'galex-fuv.ecsv'))
+                nuv = specFilter.load_filter(
+                        os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat', 'galex-nuv.ecsv'))
+                # load sdss filters
+                sdss_u = specFilter.load_filter('sdss2010-u')
+                sdss_g = specFilter.load_filter('sdss2010-g')
+                sdss_r = specFilter.load_filter('sdss2010-r')
+                sdss_i = specFilter.load_filter('sdss2010-i')
+                sdss_z = specFilter.load_filter('sdss2010-z')
+
+                filters = [fuv, nuv, sdss_u, sdss_g, sdss_r, sdss_i, sdss_z]
+            else: 
+                raise NotImplementedError("specified bands not implemented") 
+        else: 
+            raise NotImplementedError("specified bands not implemented") 
+
+        return specFilter.FilterSequence(filters)
+
 
 # --- priors --- 
 def default_NMF_prior(burst=True): 
