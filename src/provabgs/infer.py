@@ -837,7 +837,7 @@ def default_NMF_prior(burst=True):
     ''' default prior for NMF model
     '''
     prior_list = [
-            UniformPrior(8., 12., label='sed'),
+            UniformPrior(7., 12.5, label='sed'),
             FlatDirichletPrior(4, label='sed')   # flat dirichilet priors
             ]
     if burst: 
@@ -848,7 +848,7 @@ def default_NMF_prior(burst=True):
     prior_list.append(LogUniformPrior(4.5e-5, 4.5e-2, label='sed')) # uniform priors on ZH coeff
     prior_list.append(UniformPrior(0., 3., label='sed'))        # uniform priors on dust1
     prior_list.append(UniformPrior(0., 3., label='sed'))        # uniform priors on dust2
-    prior_list.append(UniformPrior(-2.2, 0.4, label='sed'))     # uniform priors on dust_index
+    prior_list.append(UniformPrior(-2., 1, label='sed'))     # uniform priors on dust_index
     
     return load_priors(prior_list) 
 
@@ -963,6 +963,9 @@ class PriorSeq(object):
         prior_min, prior_max = [], [] 
         for prior in self.list_of_priors: 
             if isinstance(prior, UniformPrior): 
+                _min = prior.min
+                _max = prior.max 
+            elif isinstance(prior, LogUniformPrior): 
                 _min = prior.min
                 _max = prior.max 
             elif isinstance(prior, FlatDirichletPrior): 
