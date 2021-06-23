@@ -9,10 +9,18 @@ import os, sys
 def deploy_training_job(ibatch, name, ncpu=1): 
     ''' create slurm script and then submit 
     '''
+    if ibatch == 'test': 
+        time="02:00:00"
+    else:  
+        if name =='burst': 
+            time="00:20:00"
+        else: 
+            time="01:00:00"
+    
     cntnt = '\n'.join([
         "#!/bin/bash", 
         "#SBATCH --qos=regular", 
-        "#SBATCH --time=03:00:00", 
+        "#SBATCH --time=%s" % time, 
         "#SBATCH --constraint=haswell", 
         "#SBATCH -N 1", 
         "#SBATCH -J train%s" % str(ibatch),  
@@ -27,7 +35,7 @@ def deploy_training_job(ibatch, name, ncpu=1):
         "",
         "conda activate gqp", 
         "",
-        "python /global/homes/c/chahah/projects/provabgs/bin/training.py %s %s %i" % (name, str(ibatch), ncpu), 
+        "python /global/homes/c/chahah/projects/provabgs/bin/training_data_%s.py %s %i" % (name, str(ibatch), ncpu), 
         'now=$(date +"%T")', 
         'echo "end time ... $now"', 
         ""]) 
