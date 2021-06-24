@@ -198,12 +198,12 @@ class Model(object):
 
 class NMF(Model): 
     ''' SPS model with non-parametric star formation and metallicity histories
-    and flexible dust attenuation model.  The SFH and ZH are based on
-    non-negative matrix factorization (NMF) bases (Tojeiro+in prep). The dust
-    attenuation uses a standard Charlot & Fall dust model.
+    and flexible dust attenuation model. The SFH and ZH are based on non-negative
+    matrix factorization (NMF) bases (Tojeiro+in prep). The dust attenuation
+    uses a standard Charlot & Fall dust model.
 
     The SFH uses 4 NMF bases. If you specify `burst=True`, the SFH will
-    include a burst component. 
+    include an additional burst component. 
     
     The ZH uses 2 NMF bases. Minimum metallicities of 4.49e-5 and 4.49e-2 are
     imposed automatically on the ZH. These limits are based on the metallicity
@@ -219,18 +219,19 @@ class NMF(Model):
     evaluate the SPS model, rather than Flexible Stellar Population Synthesis.
     The emulator has <1% level accuracy and its *much* faster than FSPS. I
     recommend using the emulator for parameter exploration. 
-  
+
 
     Parameters
     ----------
     burst : bool
-        If True include a star bursts in SFH. (default: True) 
+        If True include a star bursts component in SFH. (default: True) 
 
     emulator : bool
         If True, use emulator rather than running FSPS. 
 
     cosmo : astropy.comsology object
-        specify cosmology
+        specify cosmology. If cosmo=None, NMF uses astorpy.cosmology.Planck13 
+        by default.
 
 
     Notes 
@@ -591,10 +592,9 @@ class NMF(Model):
         self._burst_emu_waves = np.concatenate(self._burst_emu_wave) 
         return None 
 
-    def SFH(self, tt, zred=None, tage=None, burst=True): 
+    def SFH(self, tt, zred=None, tage=None): 
         ''' star formation history for given set of parameter values and
-        redshift. SFH is parameterized using a 4 component SFH NMF bases. If
-        `burst=True`, SFH includes an instantaneous star burst contribution. 
+        redshift.
     
         Parameters
         ----------
@@ -603,10 +603,6 @@ class NMF(Model):
 
         tage : float
             age of the galaxy 
-
-        burst : bool
-            If True include burst. This overrides `burst` kwarg specified in
-            __init__
 
         Returns
         -------
@@ -641,8 +637,8 @@ class NMF(Model):
         dt = np.diff(tlb_edges)
         sfh /= np.sum(dt * sfh, axis=1)[:,None]
         
-        # add starburst event 
-        if self._burst and burst: 
+        # add starburst 
+        if self._burst: 
             fburst = theta['fburst'] # fraction of stellar mass from star burst
             tburst = theta['tburst'] # time of star burst
        

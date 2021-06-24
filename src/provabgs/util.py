@@ -37,8 +37,8 @@ def jansky_cgs():
 def tlookback_bin_edges(tage): 
     ''' hardcoded log-spaced lookback time bin edges. Bins have 0.1 log10(Gyr)
     widths. See `nb/tlookback_binning.ipynb` for comparison of linear and
-    log-spaced binning. With log-space we reproduce more accurate spectra with
-    fewer stellar populations.
+    log-spaced binning. With log-space we reproduce spectra constructed from
+    high time resolution SFHs more accurately with fewer stellar populations.
     '''
     bin_edges = np.zeros(43)
     bin_edges[1:-1] = 10**(6.05 + 0.1 * np.arange(41) - 9.)
