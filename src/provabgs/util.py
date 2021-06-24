@@ -34,6 +34,17 @@ def jansky_cgs():
     return 1e-23
 
 
+def tlookback_bin_edges(): 
+    ''' hardcoded log-spaced lookback time bin edges. Bins have 0.1 log10(Gyr)
+    widths. See `nb/tlookback_binning.ipynb` for comparison of linear and
+    log-spaced binning. With log-space we reproduce more accurate spectra with
+    fewer stellar populations.
+    '''
+    bin_edges = np.zeros(43)
+    bin_edges[1:-1] = 10**(6.05 + 0.1 * np.arange(41) - 9.)
+    bin_edges[-1] = 13.8
+    return bin_edges
+
 # --- the code below is taken from the `desispec` and `redrock` python package.
 # I've copied the code over instead of importing it to reduce package
 # dependencies.
