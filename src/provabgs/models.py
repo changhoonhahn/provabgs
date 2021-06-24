@@ -357,7 +357,7 @@ class NMF(Model):
         # NMF SFH(t) noramlized to 1 **without burst**
         tlb_edges, sfh = self.SFH(
                 np.concatenate([[0.], tt[1:]]), 
-                tage=tage, burst=False)  
+                tage=tage, _burst=False)  
         tages = 0.5 * (tlb_edges[1:] + tlb_edges[:-1])
         # NMF ZH at lookback time bins 
         _, zh = self.ZH(tt, tage=tage)
@@ -592,7 +592,7 @@ class NMF(Model):
         self._burst_emu_waves = np.concatenate(self._burst_emu_wave) 
         return None 
 
-    def SFH(self, tt, zred=None, tage=None): 
+    def SFH(self, tt, zred=None, tage=None, _burst=True): 
         ''' star formation history for given set of parameter values and
         redshift.
     
@@ -638,7 +638,7 @@ class NMF(Model):
         sfh /= np.sum(dt * sfh, axis=1)[:,None]
         
         # add starburst 
-        if self._burst: 
+        if self._burst and _burst: 
             fburst = theta['fburst'] # fraction of stellar mass from star burst
             tburst = theta['tburst'] # time of star burst
        
