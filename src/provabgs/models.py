@@ -919,249 +919,250 @@ class NMF(Model):
                 imf_type=imf_type)             # chabrier 
         return None  
     
-
-class Tau(Model): 
-    ''' SPS model where SFH is parameterized using tau models (standard or
-    delayed tau) and constant metallicity history.  
-
-    Parameters
-    ----------
-    burst : bool
-        If True include a star bursts in SFH. (default: True) 
-
-    delayed : bool
-        If False, use standard tau model. 
-        If True, use delayed-tau model. 
-        (default: False) 
-
-    emulator : bool
-        If True, use emulator rather than running FSPS. Not yet implemented for
-        `Tau`. (default: False) 
-
-    cosmo : astropy.comsology object
-        specify cosmology
-
-
-    Notes 
-    -----
-    * only supports Calzetti+(2000) attenuation curve) and Chabrier IMF. 
-
-    '''
-    def __init__(self, burst=True, delayed=False, emulator=False, cosmo=None): 
-        self._ssp = None 
-        self._burst = burst 
-        self._delayed = delayed
-        self._emulator = emulator 
-        assert not emulator, "emulator not yet implemneted --- coming soon"
-        super().__init__(cosmo=cosmo)
-
-    def _fsps(self, tt, tage): 
-        ''' FSPS SPS model with tau or delayed-tau model SFH  
-
-
-        Parameters 
-        ----------
-        tt : 1-d array
-            Parameter FSPS tau model 
-            * log M*  
-            * e-folding time in Gyr 0.1 < tau < 10^2
-            * constant component 0 < C < 1 
-            * start time of SFH in Gyr
-
-            if burst = True
-            * fraction of mass formed in an instantaneous burst of star formation
-            * age of the universe when burst occurs (tburst < tage) 
-
-            * metallicity 
-            * Calzetti+(2000) dust index 
-        
-        tage : float
-            age of the galaxy 
-
-        Returns
-        -------
-        wave_rest : array_like[Nwave] 
-            rest-frame wavelength of SSP flux 
-
-
-        lum_ssp : array_like[Nwave] 
-            FSPS SSP luminosity in units of Lsun/A
-        '''
-        # initialize FSPS StellarPopulation object
-        if self._ssp is None: self._ssp_initiate() 
-        theta = self._parse_theta(tt) 
-
-        # sfh parameters
-        self._ssp.params['tau']      = theta['tau_sfh'] # e-folding time in Gyr 0.1 < tau < 10^2
-        self._ssp.params['const']    = theta['const_sfh'] # constant component 0 < C < 1 
-        self._ssp.params['sf_start'] = theta['sf_start'] # start time of SFH in Gyr
-        if self._burst: 
-            self._ssp.params['fburst'] = theta['fburst'] # fraction of mass formed in an instantaneous burst of star formation
-            self._ssp.params['tburst'] = theta['tburst'] # age of the universe when burst occurs (tburst < tage) 
-
-        # metallicity
-        self._ssp.params['logzsol']  = np.log10(theta['metallicity']/0.0190) # log(z/zsun) 
-        # dust 
-        self._ssp.params['dust2']    = theta['dust2']  # dust2 parameter in fsps 
-        
-        w, l_ssp = self._ssp.get_spectrum(tage=tage, peraa=True) 
-        
-        # mass normalization
-        l_ssp *= (10**theta['logmstar']) 
-
-        return w, l_ssp 
-
-    def SFH(self, tt, zred=None, tage=None): 
-        ''' tau or delayed-tau star formation history given parameter values.
+"""
+    class Tau(Model): 
+        ''' SPS model where SFH is parameterized using tau models (standard or
+        delayed tau) and constant metallicity history.  
 
         Parameters
         ----------
-        tt : 1d or 2d array
-            Nparam or NxNparam array specifying the parameter values 
+        burst : bool
+            If True include a star bursts in SFH. (default: True) 
 
-        zred : float, optional
-            redshift of the galaxy
+        delayed : bool
+            If False, use standard tau model. 
+            If True, use delayed-tau model. 
+            (default: False) 
 
-        tage : float, optional
-            age of the galaxy in Gyrs
+        emulator : bool
+            If True, use emulator rather than running FSPS. Not yet implemented for
+            `Tau`. (default: False) 
 
-        Notes
+        cosmo : astropy.comsology object
+            specify cosmology
+
+
+        Notes 
         -----
-        * 12/22/2020: decided to have SFH integrate to 1 by using numerically
-           integrated normalization rather than analytic  
-        * There are some numerical errors where the SFH integrates to slightly
-            greater than one. It should be good enough for most purposes. 
+        * only supports Calzetti+(2000) attenuation curve) and Chabrier IMF. 
+
         '''
-        if zred is None and tage is None: 
-            raise ValueError("specify either the redshift or age of the galaxy")
-        if tage is None: 
-            tage = self.cosmo.age(zred).value # age in Gyr
+        def __init__(self, burst=True, delayed=False, emulator=False, cosmo=None): 
+            self._ssp = None 
+            self._burst = burst 
+            self._delayed = delayed
+            self._emulator = emulator 
+            assert not emulator, "emulator not yet implemneted --- coming soon"
+            super().__init__(cosmo=cosmo)
 
-        from scipy.special import gammainc
+        def _fsps(self, tt, tage): 
+            ''' FSPS SPS model with tau or delayed-tau model SFH  
+
+
+            Parameters 
+            ----------
+            tt : 1-d array
+                Parameter FSPS tau model 
+                * log M*  
+                * e-folding time in Gyr 0.1 < tau < 10^2
+                * constant component 0 < C < 1 
+                * start time of SFH in Gyr
+
+                if burst = True
+                * fraction of mass formed in an instantaneous burst of star formation
+                * age of the universe when burst occurs (tburst < tage) 
+
+                * metallicity 
+                * Calzetti+(2000) dust index 
+            
+            tage : float
+                age of the galaxy 
+
+            Returns
+            -------
+            wave_rest : array_like[Nwave] 
+                rest-frame wavelength of SSP flux 
+
+
+            lum_ssp : array_like[Nwave] 
+                FSPS SSP luminosity in units of Lsun/A
+            '''
+            # initialize FSPS StellarPopulation object
+            if self._ssp is None: self._ssp_initiate() 
+            theta = self._parse_theta(tt) 
+
+            # sfh parameters
+            self._ssp.params['tau']      = theta['tau_sfh'] # e-folding time in Gyr 0.1 < tau < 10^2
+            self._ssp.params['const']    = theta['const_sfh'] # constant component 0 < C < 1 
+            self._ssp.params['sf_start'] = theta['sf_start'] # start time of SFH in Gyr
+            if self._burst: 
+                self._ssp.params['fburst'] = theta['fburst'] # fraction of mass formed in an instantaneous burst of star formation
+                self._ssp.params['tburst'] = theta['tburst'] # age of the universe when burst occurs (tburst < tage) 
+
+            # metallicity
+            self._ssp.params['logzsol']  = np.log10(theta['metallicity']/0.0190) # log(z/zsun) 
+            # dust 
+            self._ssp.params['dust2']    = theta['dust2']  # dust2 parameter in fsps 
+            
+            w, l_ssp = self._ssp.get_spectrum(tage=tage, peraa=True) 
+            
+            # mass normalization
+            l_ssp *= (10**theta['logmstar']) 
+
+            return w, l_ssp 
+
+        def SFH(self, tt, zred=None, tage=None): 
+            ''' tau or delayed-tau star formation history given parameter values.
+
+            Parameters
+            ----------
+            tt : 1d or 2d array
+                Nparam or NxNparam array specifying the parameter values 
+
+            zred : float, optional
+                redshift of the galaxy
+
+            tage : float, optional
+                age of the galaxy in Gyrs
+
+            Notes
+            -----
+            * 12/22/2020: decided to have SFH integrate to 1 by using numerically
+               integrated normalization rather than analytic  
+            * There are some numerical errors where the SFH integrates to slightly
+                greater than one. It should be good enough for most purposes. 
+            '''
+            if zred is None and tage is None: 
+                raise ValueError("specify either the redshift or age of the galaxy")
+            if tage is None: 
+                tage = self.cosmo.age(zred).value # age in Gyr
+
+            from scipy.special import gammainc
+            
+            theta       = self._parse_theta(tt) 
+            logmstar    = theta['logmstar'] 
+            tau         = theta['tau_sfh'] 
+            const       = theta['const_sfh']
+            sf_start    = theta['sf_start']
+            if self._burst: 
+                fburst  = theta['fburst'] 
+                tburst  = theta['tburst'] 
         
-        theta       = self._parse_theta(tt) 
-        logmstar    = theta['logmstar'] 
-        tau         = theta['tau_sfh'] 
-        const       = theta['const_sfh']
-        sf_start    = theta['sf_start']
-        if self._burst: 
-            fburst  = theta['fburst'] 
-            tburst  = theta['tburst'] 
-    
-        # tau or delayed-tau 
-        power = 1 
-        if self._delayed: power = 2
+            # tau or delayed-tau 
+            power = 1 
+            if self._delayed: power = 2
 
-        t = np.linspace(sf_start, np.repeat(tage, sf_start.shape[0]), 100).T 
-        tlookback = t - sf_start[:,None]
-        dt = np.diff(t, axis=1)[:,0]
-        
-        tmax = (tage - sf_start) / tau
-        normalized_t = (t - sf_start[:,None])/tau[:,None]
-        
-        # constant contribution 
-        sfh = (np.tile(const / (tage-sf_start), (100, 1))).T
+            t = np.linspace(sf_start, np.repeat(tage, sf_start.shape[0]), 100).T 
+            tlookback = t - sf_start[:,None]
+            dt = np.diff(t, axis=1)[:,0]
+            
+            tmax = (tage - sf_start) / tau
+            normalized_t = (t - sf_start[:,None])/tau[:,None]
+            
+            # constant contribution 
+            sfh = (np.tile(const / (tage-sf_start), (100, 1))).T
 
-        # burst contribution 
-        if self._burst: 
-            tb = (tburst - sf_start) / tau
-            has_burst = (tb > 0)
-            fburst[~has_burst] = 0. 
-            iburst = np.floor(tb[has_burst] / dt[has_burst] * tau[has_burst]).astype(int)
-            dts = (np.tile(dt, (100, 1))).T
-            dts[:,0] *= 0.5 
-            dts[:,-1] *= 0.5 
-            sfh[has_burst, iburst] += fburst[has_burst] / dts[has_burst, iburst]
-        else: 
-            fburst = 0. 
+            # burst contribution 
+            if self._burst: 
+                tb = (tburst - sf_start) / tau
+                has_burst = (tb > 0)
+                fburst[~has_burst] = 0. 
+                iburst = np.floor(tb[has_burst] / dt[has_burst] * tau[has_burst]).astype(int)
+                dts = (np.tile(dt, (100, 1))).T
+                dts[:,0] *= 0.5 
+                dts[:,-1] *= 0.5 
+                sfh[has_burst, iburst] += fburst[has_burst] / dts[has_burst, iburst]
+            else: 
+                fburst = 0. 
 
-        # tau contribution 
-        ftau = (1. - const - fburst) 
-        sfh_tau = (normalized_t **(power - 1) * np.exp(-normalized_t))
-        sfh += sfh_tau * (ftau / tau / np.trapz(sfh_tau, normalized_t))[:,None]
-        #sfh += ftau[:,None] / tau[:,None] * (normalized_t **(power - 1) *
-        #        np.exp(-normalized_t) / gammainc(power, tmax.T)[:,None])
-        
-        # normalize by stellar mass 
-        sfh *= 10**logmstar[:,None]
+            # tau contribution 
+            ftau = (1. - const - fburst) 
+            sfh_tau = (normalized_t **(power - 1) * np.exp(-normalized_t))
+            sfh += sfh_tau * (ftau / tau / np.trapz(sfh_tau, normalized_t))[:,None]
+            #sfh += ftau[:,None] / tau[:,None] * (normalized_t **(power - 1) *
+            #        np.exp(-normalized_t) / gammainc(power, tmax.T)[:,None])
+            
+            # normalize by stellar mass 
+            sfh *= 10**logmstar[:,None]
 
-        if np.atleast_2d(tt).shape[0] == 1: 
-            return tlookback[0], sfh[0][::-1]
-        else: 
-            return tlookback, sfh[:,::-1]
+            if np.atleast_2d(tt).shape[0] == 1: 
+                return tlookback[0], sfh[0][::-1]
+            else: 
+                return tlookback, sfh[:,::-1]
 
-    def ZH(self, tt, zred=None, tage=None, tcosmic=None):
-        ''' calculate metallicity history. For `Tau` this is simply a constant
-        metallicity value  
+        def ZH(self, tt, zred=None, tage=None, tcosmic=None):
+            ''' calculate metallicity history. For `Tau` this is simply a constant
+            metallicity value  
 
-        Parameters
-        ----------
-        tt : 1d or 2d array
-            Nparam or [N, Nparam] array specifying the parameter values
+            Parameters
+            ----------
+            tt : 1d or 2d array
+                Nparam or [N, Nparam] array specifying the parameter values
 
-        zred : float, optional
-            redshift of the galaxy
+            zred : float, optional
+                redshift of the galaxy
 
-        tage : float
-            age of the galaxy in Gyrs 
-        '''
-        if zred is None and tage is None: 
-            raise ValueError("specify either the redshift or age of the galaxy")
-        if tage is None: 
-            assert isinstance(zred, float)
-            tage = self.cosmo.age(zred).value # age in Gyr
+            tage : float
+                age of the galaxy in Gyrs 
+            '''
+            if zred is None and tage is None: 
+                raise ValueError("specify either the redshift or age of the galaxy")
+            if tage is None: 
+                assert isinstance(zred, float)
+                tage = self.cosmo.age(zred).value # age in Gyr
 
-        theta = self._parse_theta(tt)
-        Z = theta['metallicity'] 
+            theta = self._parse_theta(tt)
+            Z = theta['metallicity'] 
 
-        if tcosmic is not None: 
-            assert tage >= np.max(tcosmic) 
-            t = tcosmic.copy() 
-        else: 
-            t = np.linspace(0, tage, 100)
-        
-        return t, np.tile(np.atleast_2d(Z).T, (1, 100))
+            if tcosmic is not None: 
+                assert tage >= np.max(tcosmic) 
+                t = tcosmic.copy() 
+            else: 
+                t = np.linspace(0, tage, 100)
+            
+            return t, np.tile(np.atleast_2d(Z).T, (1, 100))
 
-    def _init_model(self, **kwargs): 
-        ''' some under the hood initalization of the model and its
-        parameterization. 
-        '''
-        if self._burst: 
-            self._parameters = [
-                    'logmstar', 
-                    'tau_sfh',      # e-folding time in Gyr 0.1 < tau < 10^2
-                    'const_sfh',    # constant component 0 < C < 1 
-                    'sf_start',     # start time of SFH in Gyr #'sf_trunc'    
-                    'fburst',       # fraction of mass formed in an instantaneous burst of star formation
-                    'tburst',       # age of the universe when burst occurs 
-                    'metallicity', 
-                    'dust2']
-        else: 
-            self._parameters = [
-                    'logmstar', 
-                    'tau_sfh',      # e-folding time in Gyr 0.1 < tau < 10^2
-                    'const_sfh',    # constant component 0 < C < 1 
-                    'sf_start',     # start time of SFH in Gyr #'sf_trunc',     
-                    'metallicity', 
-                    'dust2']
+        def _init_model(self, **kwargs): 
+            ''' some under the hood initalization of the model and its
+            parameterization. 
+            '''
+            if self._burst: 
+                self._parameters = [
+                        'logmstar', 
+                        'tau_sfh',      # e-folding time in Gyr 0.1 < tau < 10^2
+                        'const_sfh',    # constant component 0 < C < 1 
+                        'sf_start',     # start time of SFH in Gyr #'sf_trunc'    
+                        'fburst',       # fraction of mass formed in an instantaneous burst of star formation
+                        'tburst',       # age of the universe when burst occurs 
+                        'metallicity', 
+                        'dust2']
+            else: 
+                self._parameters = [
+                        'logmstar', 
+                        'tau_sfh',      # e-folding time in Gyr 0.1 < tau < 10^2
+                        'const_sfh',    # constant component 0 < C < 1 
+                        'sf_start',     # start time of SFH in Gyr #'sf_trunc',     
+                        'metallicity', 
+                        'dust2']
 
-        if not self._emulator: 
-            self._sps_model = self._fsps 
+            if not self._emulator: 
+                self._sps_model = self._fsps 
 
-        return None 
+            return None 
 
-    def _ssp_initiate(self): 
-        ''' initialize sps (FSPS StellarPopulaiton object) 
-        '''
-        # tau or delayed tau model
-        if not self._delayed: sfh = 1 
-        else: sfh = 4 
+        def _ssp_initiate(self): 
+            ''' initialize sps (FSPS StellarPopulaiton object) 
+            '''
+            # tau or delayed tau model
+            if not self._delayed: sfh = 1 
+            else: sfh = 4 
 
-        dust_type   = 2 # Calzetti et al. (2000) attenuation curve
-        imf_type    = 1 # chabrier
-        self._ssp = fsps.StellarPopulation(
-                zcontinuous=1,          # interpolate metallicities
-                sfh=sfh,                # sfh type 
-                dust_type=dust_type,            
-                imf_type=imf_type)      # chabrier 
-        return None  
+            dust_type   = 2 # Calzetti et al. (2000) attenuation curve
+            imf_type    = 1 # chabrier
+            self._ssp = fsps.StellarPopulation(
+                    zcontinuous=1,          # interpolate metallicities
+                    sfh=sfh,                # sfh type 
+                    dust_type=dust_type,            
+                    imf_type=imf_type)      # chabrier 
+            return None  
+"""
