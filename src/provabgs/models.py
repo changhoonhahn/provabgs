@@ -183,169 +183,6 @@ class Model(object):
         smoothflux = gaussian_filter1d(flux_wlog, sigma=sigma, axis=0)
         return wlog, smoothflux
     
-    def avgSFR(self, tt, zred=None, tage=None, dt=1., t0=None, method='trapz'):
-        ''' given a set of parameter values `tt` and redshift `zred`, calculate
-        SFR averaged over `dt` Gyr. 
-
-        parameters
-        ----------
-        tt : array_like[Ntheta, Nparam]
-           Parameter values of [log M*, b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH,
-           'dust1', 'dust2', 'dust_index']. 
-
-        zred : float or array_like[Ntheta] 
-            redshift
-
-        dt : float
-            Gyrs to average the SFHs 
-
-        t0 : None or float 
-            lookback time where you want to evaluate the average SFR. If
-            specified, the function returns the average SFR over the range [t0,
-            t0-dt]. If None, [tage, tage-dt]
-        '''
-        if zred is None and tage is None: 
-            raise ValueError('specify either zred or tage')
-        if zred is not None and tage is not None: 
-            raise ValueError('specify either zred or tage')
-
-        _t, _sfh = self.SFH(tt, tage=tage, zred=zred) # get SFH 
-        if np.atleast_2d(_t).shape[0] > 1: 
-            ts, sfhs = _t, _sfh 
-        else: 
-            ts = [_t]
-            sfhs = [_sfh] 
-
-        avsfrs = [] 
-        for tlookback, sfh in zip(ts, sfhs): 
-
-            sfh = np.atleast_2d(sfh) / 1e9 # in units of 10^9 Msun 
-
-            tage = tlookback[-1] 
-            assert tage > dt, "tage=%.2f, dt=%.2f" % (tage, dt) # check that the age of the galaxy is longer than the timescale 
-
-            if t0 is None: 
-                # calculate average SFR over the range tcomic [tage, tage - dt]
-                # linearly interpolate SFH at tage - dt  
-                i0 = np.where(tlookback < dt)[0][-1]  
-                i1 = np.where(tlookback > dt)[0][0]
-
-                sfh_t_dt = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (dt - tlookback[i0]) + sfh[:,i0]
-            
-                _t = np.concatenate([tlookback[:i0+1], [dt]]) 
-                _sfh = np.concatenate([sfh[:,:i0+1], sfh_t_dt[:,None]], axis=1)
-            else: 
-                # calculate average SFR over the range tcomic \in [t0, t0-dt]
-                if t0 < tage: 
-                    # linearly interpolate SFH to t0   
-                    i0 = np.where(tlookback < t0)[0][-1]  
-                    i1 = np.where(tlookback > t0)[0][0]
-
-                    sfh_t_t0 = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (t0 - tlookback[i0]) + sfh[:,i0]
-                else: 
-                    sfh_t_t0 = np.zeros(sfh.shape[0])
-                
-                # linearly interpolate SFH to t0 - dt  
-                if t0 + dt < tage: 
-                    i0 = np.where(tlookback < t0 + dt)[0][-1]  
-                    i1 = np.where(tlookback > t0 + dt)[0][0]
-
-                    sfh_t_t0_dt = (sfh[:,i1] - sfh[:,i0]) / (tlookback[i1] - tlookback[i0]) * (t0 + dt - tlookback[i0]) + sfh[:,i0]
-                else: 
-                    sfh_t_t0_dt = np.zeros(sfh.shape[0])
-
-                i_in = (tlookback < t0 + dt) & (tlookback > t0)
-    
-                _t = np.concatenate([[t0], tlookback[i_in], [t0 + dt]]) 
-                _sfh = np.concatenate([sfh_t_t0[:,None], sfh[:,i_in], sfh_t_t0_dt[:,None]], axis=1)
-
-            # add up the stellar mass formed during the dt time period 
-            if method == 'trapz': 
-                avsfr = np.trapz(_sfh, _t) / dt
-            elif method == 'simps': 
-                from scipy.intergrate import simps
-                avsfr = simps(_sfh, _t) / dt
-            else: 
-                raise NotImplementedError
-            avsfrs.append(np.clip(avsfr, 0., None))
-        
-        if len(avsfrs) == 1: 
-            return avsfrs[0]
-        else: 
-            return np.concatenate(avsfrs) 
-    
-    def Z_MW(self, tt, tage=None, zred=None):
-        ''' given theta calculate mass weighted metallicity using the ZH NMF
-        bases. 
-        '''
-        if tage is None and zred is None: 
-            raise ValueError("specify either zred or tage") 
-        if tage is not None and zred is not None: 
-            raise ValueError("specify either zred or tage") 
-
-        theta = self._parse_theta(tt) 
-        t, sfh = self.SFH(tt, tage=tage, zred=zred) # get SFH 
-        _, zh = self.ZH(tt, tage=tage, zred=zred, tcosmic=t) 
-
-        # mass weighted average
-        z_mw = np.trapz(zh * sfh, t) / (10**theta['logmstar']) # np.trapz(sfh, t) should equal tt[:,0] 
-
-        return np.clip(z_mw, 0, np.inf)
-
-    def _load_NMF_bases(self, name='tojeiro.4comp'): 
-        ''' read in NMF SFH and ZH bases. These bases are used to reduce the
-        dimensionality of the SFH and ZH. 
-        '''
-        dir_dat = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat') 
-        if name == 'tojeiro.4comp': 
-            fsfh = os.path.join(dir_dat, 'NMF_2basis_SFH_components_nowgt_lin_Nc4.txt')
-            fzh = os.path.join(dir_dat, 'NMF_2basis_Z_components_nowgt_lin_Nc2.txt') 
-            ft = os.path.join(dir_dat, 'sfh_t_int.txt') 
-
-            nmf_sfh = np.loadtxt(fsfh) # basis order is jumbled up it should be [2 ,0, 1, 3]
-            nmf_zh  = np.loadtxt(fzh) 
-            nmf_t   = np.loadtxt(ft) # look back time 
-
-            self._nmf_t_lb_sfh      = nmf_t[::-1] 
-            self._nmf_t_lb_zh       = nmf_t[::-1] 
-            self._nmf_sfh_basis     = nmf_sfh[:,::-1]
-            self._nmf_zh_basis      = nmf_zh[:,::-1]
-        elif name in ['tng.4comp', 'tng.6comp']: 
-            icomp = int(name.split('.')[-1][0])
-            fsfh = os.path.join(dir_dat, 'NMF_basis.sfh.tng%icomp.txt' % icomp) 
-            fzh = os.path.join(dir_dat, 'NMF_2basis_Z_components_nowgt_lin_Nc2.txt') 
-            ftsfh = os.path.join(dir_dat, 't_sfh.tng%icomp.txt' % icomp) 
-            ftzh = os.path.join(dir_dat, 'sfh_t_int.txt') 
-
-            nmf_sfh     = np.loadtxt(fsfh, unpack=True) 
-            nmf_zh      = np.loadtxt(fzh) 
-            nmf_tsfh    = np.loadtxt(ftsfh) # look back time 
-            nmf_tzh     = np.loadtxt(ftzh) # look back time 
-
-            self._nmf_t_lb_sfh      = nmf_tsfh
-            self._nmf_t_lb_zh       = nmf_tzh[::-1]
-            self._nmf_sfh_basis     = nmf_sfh 
-            self._nmf_zh_basis      = nmf_zh[:,::-1]
-        else:
-            raise NotImplementedError
-
-        self._Ncomp_sfh = self._nmf_sfh_basis.shape[0]
-        self._Ncomp_zh = self._nmf_zh_basis.shape[0]
-        
-        # SFH bases as a function of lookback time 
-        self._sfh_basis = [
-                Interp.InterpolatedUnivariateSpline(
-                    self._nmf_t_lb_sfh, 
-                    self._nmf_sfh_basis[i], k=1) 
-                for i in range(self._Ncomp_sfh)
-                ]
-        self._zh_basis = [
-                Interp.InterpolatedUnivariateSpline(
-                    self._nmf_t_lb_zh, 
-                    self._nmf_zh_basis[i], k=1) 
-                for i in range(self._Ncomp_zh)]
-        return None 
-
     def _parse_theta(self, tt):
         ''' parse given array of parameter values 
         '''
@@ -508,6 +345,7 @@ class NMF(Model):
           significant contributions. Also we set a minimum tage = 1e-8 because
           FSPS returns a grid for tage = 0 but 1e-8 gets the youngest isochrone
           anyway. 
+        * 2021/06/24: log-spaced lookback time implemented
         '''
         if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
         theta = self._parse_theta(tt) 
@@ -516,18 +354,17 @@ class NMF(Model):
             theta['beta3_sfh'], theta['beta4_sfh']]), 1.), "SFH basis coefficients should add up to 1"
         
         # NMF SFH(t) noramlized to 1 **without burst**
-        tlookback, sfh = self.SFH(
+        tlb_edges, sfh = self.SFH(
                 np.concatenate([[0.], tt[1:]]), 
                 tage=tage, burst=False)  
+        tages = 0.5 * (tlb_edges[1:] + tlb_edges[:-1])
         # NMF ZH at lookback time bins 
         _, zh = self.ZH(tt, tage=tage)
-
-        dt = np.zeros(len(tlookback))
-        dt[1:-1] = 0.5 * (np.diff(tlookback)[1:] + np.diff(tlookback)[:-1]) 
-        dt[0]   = 0.5 * (tlookback[1] - tlookback[0]) 
-        dt[-1]  = 0.5 * (tlookback[-1] - tlookback[-2]) 
+        
+        dt = np.diff(tlb_edges)
     
-        for i, tage in enumerate(tlookback): 
+        # look over log-spaced lookback time bins and add up SSPs
+        for i, tage in enumerate(tages): 
             m = dt[i] * sfh[i] # mass formed in this bin 
             if m == 0 and i != 0: continue 
 
@@ -536,9 +373,7 @@ class NMF(Model):
             self._ssp.params['dust2'] = theta['dust2']  
             self._ssp.params['dust_index'] = theta['dust_index']
             
-            wave_rest, lum_i = self._ssp.get_spectrum(
-                    tage=np.clip(tage, 1e-8, None), 
-                    peraa=True) # in units of Lsun/AA
+            wave_rest, lum_i = self._ssp.get_spectrum(tage=tage, peraa=True) # in units of Lsun/AA
             # note that this spectrum is normalized such that the total formed
             # mass = 1 Msun
 
@@ -775,8 +610,8 @@ class NMF(Model):
 
         Returns
         -------
-        t : 1d or 2d array 
-            linearly spaced look back time
+        tedges: 1d array 
+            bin edges of log-spaced look back time
 
         sfh : 1d or 2d array 
             star formation history at lookback time specified by t 
@@ -792,17 +627,20 @@ class NMF(Model):
         # sfh nmf basis coefficients 
         tt_sfh = np.array([theta['beta1_sfh'], theta['beta2_sfh'],
             theta['beta3_sfh'], theta['beta4_sfh']]).T
-
-        t = np.linspace(0., tage, 100) # look back time 
-        
-        # normalized basis out to t 
-        _basis = np.array([self._sfh_basis[i](t)/np.trapz(self._sfh_basis[i](t), t) 
-            for i in range(self._N_nmf_sfh)])
-
-        # caluclate normalized SFH
-        sfh = np.sum(np.array([tt_sfh[:,i][:,None] * _basis[i][None,:] 
-            for i in range(self._N_nmf_sfh)]), axis=0)
     
+        # log-spaced lookback time bin edges 
+        tlb_edges = UT.tlookback_bin_edges(tage)
+
+        sfh_hr = np.sum(np.array([tt_sfh[:,i][:,None] *
+            self._sfh_basis_hr[i][None,:] for i in range(self._N_nmf_sfh)]),
+            axis=0)
+
+        sfh = np.array([UT.trapz_rebin(self._t_lb_hr, _sfh_hr, edges=tlb_edges)
+            for _sfh_hr in sfh_hr])
+
+        dt = np.diff(tlb_edges)
+        sfh /= np.sum(dt * sfh, axis=1)[:,None]
+        
         # add starburst event 
         if self._burst and burst: 
             fburst = theta['fburst'] # fraction of stellar mass from star burst
@@ -813,33 +651,96 @@ class NMF(Model):
 
             # add normalized starburst to SFH 
             sfh *= (1. - fburst)[:,None] 
-            sfh += fburst[:,None] * self._SFH_burst(tburst, t)
+            sfh += fburst[:,None] * self._SFH_burst(tburst, tlb_edges)
 
         # multiply by stellar mass 
         sfh *= 10**theta['logmstar'][:,None]
 
-        if np.atleast_2d(tt).shape[0] == 1: return t, sfh[0]
-        return t, sfh 
+        if np.atleast_2d(tt).shape[0] == 1: 
+            return tlb_edges, sfh[0]
+        return tlb_edges, sfh 
 
-    def _SFH_burst(self, tburst, tgrid): 
+    def _SFH_burst(self, tburst, tedges): 
         ''' place a single star-burst event on a given *evenly spaced* lookback time grid
         '''
         tburst = np.atleast_1d(tburst)
-        dt = tgrid[1] - tgrid[0] 
+        dts = np.diff(tedges)
         
-        sfh = np.zeros((len(tburst), len(tgrid)))
-
         # burst within the age of the galaxy 
-        has_burst = (tburst < tgrid.max()) 
+        has_burst = (tburst < tedges.max()) 
+        
+        # log-spaced lookback time bin with burst 
+        iburst = np.digitize(tburst[has_burst], tedges)-1
 
-        iburst = np.floor(tburst[has_burst] / dt).astype(int)
-        dts = np.repeat(dt, 100)
-        dts[0] *= 0.5 
-        dts[-1] *= 0.5 
+        sfh = np.zeros((len(tburst), len(tedges)-1))
         sfh[has_burst, iburst] += 1. / dts[iburst]
         return sfh 
+   
+    def avgSFR(self, tt, zred=None, tage=None, dt=1):
+        ''' given a set of parameter values `tt` and redshift `zred`, calculate
+        SFR averaged over `dt` Gyr. 
+
+        parameters
+        ----------
+        tt : array_like[Ntheta, Nparam]
+           Parameter values of [log M*, b1SFH, b2SFH, b3SFH, b4SFH, g1ZH, g2ZH,
+           'dust1', 'dust2', 'dust_index']. 
+
+        zred : float 
+            redshift
+
+        tage : float 
+            age of galaxy 
+
+        dt : float
+            Gyrs to average the SFHs 
+        '''
+        if zred is None and tage is None: 
+            raise ValueError('specify either zred or tage')
+        if zred is not None and tage is not None: 
+            raise ValueError('specify either zred or tage')
+        if tage is None: 
+            assert isinstance(zred, float)
+            tage = self.cosmo.age(zred).value # age in Gyr
+
+        theta = self._parse_theta(tt) 
+
+        # sfh nmf basis coefficients 
+        tt_sfh = np.array([theta['beta1_sfh'], theta['beta2_sfh'],
+            theta['beta3_sfh'], theta['beta4_sfh']]).T
     
-    def ZH(self, tt, zred=None, tage=None, tcosmic=None): 
+        # log-spaced lookback time bin edges 
+        tlb_edges = UT.tlookback_bin_edges(tage)
+        assert dt < tlb_edges[-1]
+
+        sfh_hr = np.sum(np.array([tt_sfh[:,i][:,None] *
+            self._sfh_basis_hr[i][None,:] for i in range(self._N_nmf_sfh)]),
+            axis=0)
+
+        sfh = np.array([UT.trapz_rebin(self._t_lb_hr, _sfh_hr, edges=tlb_edges)
+            for _sfh_hr in sfh_hr])
+        sfh /= np.sum(np.diff(tlb_edges) * sfh, axis=1)[:,None] # normalize 
+      
+        i_dt = np.digitize(dt, tlb_edges) - 1
+        avg_sfr = np.sum(np.diff(tlb_edges)[:i_dt][None,:] * sfh[:,:i_dt], axis=1) 
+        avg_sfr += (dt - tlb_edges[i_dt]) * sfh[:,i_dt]
+        
+        # add starburst event 
+        if self._burst: 
+            fburst = theta['fburst'] # fraction of stellar mass from star burst
+            tburst = theta['tburst'] # time of star burst
+       
+            noburst = (tburst > dt)
+            fburst[noburst] = 0. 
+            
+            avg_sfr *= (1. - fburst)
+            avg_sfr += fburst
+
+        # multiply by stellar mass 
+        avg_sfr *= 10**theta['logmstar']
+        return avg_sfr
+
+    def ZH(self, tt, zred=None, tage=None): 
         ''' metallicity history for given set of parameters. metallicity is
         parameterized using a 2 component NMF basis. The parameter values
         specify the coefficient of the components and this method returns the
@@ -853,15 +754,12 @@ class NMF(Model):
         zred : float
             redshift of galaxy/csp
 
-        tcosmic : array_like
-            cosmic time
-
         Returns 
         -------
-        t : array_like[100,]
-            cosmic time linearly spaced from 0 to the age of the galaxy
+        tedge : 1d array
+            bin edges of lookback time
 
-        zh : array_like[N,100]
+        zh : 2d array
             metallicity at cosmic time t --- ZH(t) 
         '''
         if zred is None and tage is None: 
@@ -874,21 +772,94 @@ class NMF(Model):
         # metallicity history basis coefficients  
         tt_zh = np.array([theta['gamma1_zh'], theta['gamma2_zh']]).T
 
-        if tcosmic is not None: 
-            assert tage >= np.max(tcosmic) 
-            t = tcosmic.copy() 
-        else: 
-            t = np.linspace(0, tage, 100)
+        # log-spaced lookback time bin edges 
+        tlb_edges = UT.tlookback_bin_edges(tage)
+        tlb = 0.5 * (tlb_edges[1:] + tlb_edges[:-1])
 
         # metallicity basis
-        _z_basis = np.array([self._zh_basis[i](t) for i in range(self._N_nmf_zh)]) 
+        _z_basis = np.array([self._zh_basis[i](tlb) for i in range(self._N_nmf_zh)]) 
 
         # get metallicity history
         zh = np.sum(np.array([tt_zh[:,i][:,None] * _z_basis[i][None,:] for i in
             range(self._N_nmf_zh)]), axis=0).clip(self._Z_min, self._Z_max) 
 
-        if tt_zh.shape[0] == 1: return t, zh[0]
-        return t, zh 
+        if tt_zh.shape[0] == 1: return tlb_edges, zh[0]
+        return tlb_edges, zh 
+    
+    def Z_MW(self, tt, tage=None, zred=None):
+        ''' given theta calculate mass weighted metallicity using the ZH NMF
+        bases. 
+        '''
+        if tage is None and zred is None: 
+            raise ValueError("specify either zred or tage") 
+        if tage is not None and zred is not None: 
+            raise ValueError("specify either zred or tage") 
+
+        theta = self._parse_theta(tt) 
+        tlb_edge, sfh = self.SFH(tt, tage=tage, zred=zred) # get SFH 
+        _, zh = self.ZH(tt, tage=tage, zred=zred) 
+
+        # mass weighted average
+        z_mw = np.sum(np.diff(tlb_edge)[None,:] * sfh * zh, axis=1) / (10**theta['logmstar']) 
+        return z_mw 
+
+    def _load_NMF_bases(self, name='tojeiro.4comp'): 
+        ''' read in NMF SFH and ZH bases. These bases are used to reduce the
+        dimensionality of the SFH and ZH. 
+        '''
+        dir_dat = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat') 
+        if name == 'tojeiro.4comp': 
+            fsfh = os.path.join(dir_dat, 'NMF_2basis_SFH_components_nowgt_lin_Nc4.txt')
+            fzh = os.path.join(dir_dat, 'NMF_2basis_Z_components_nowgt_lin_Nc2.txt') 
+            ft = os.path.join(dir_dat, 'sfh_t_int.txt') 
+
+            nmf_sfh = np.loadtxt(fsfh)[:,::-1] # basis order is jumbled up it should be [2 ,0, 1, 3]
+            nmf_zh  = np.loadtxt(fzh)[:,::-1] 
+            nmf_t   = np.loadtxt(ft)[::-1] # look back time 
+
+            self._nmf_t_lb_sfh      = nmf_t 
+            self._nmf_t_lb_zh       = nmf_t 
+            self._nmf_sfh_basis     = np.array([nmf_sfh[2], nmf_sfh[0], nmf_sfh[1], nmf_sfh[3]])
+            self._nmf_zh_basis      = nmf_zh
+        elif name in ['tng.4comp', 'tng.6comp']: 
+            icomp = int(name.split('.')[-1][0])
+            fsfh = os.path.join(dir_dat, 'NMF_basis.sfh.tng%icomp.txt' % icomp) 
+            fzh = os.path.join(dir_dat, 'NMF_2basis_Z_components_nowgt_lin_Nc2.txt') 
+            ftsfh = os.path.join(dir_dat, 't_sfh.tng%icomp.txt' % icomp) 
+            ftzh = os.path.join(dir_dat, 'sfh_t_int.txt') 
+
+            nmf_sfh     = np.loadtxt(fsfh, unpack=True) 
+            nmf_zh      = np.loadtxt(fzh) 
+            nmf_tsfh    = np.loadtxt(ftsfh) # look back time 
+            nmf_tzh     = np.loadtxt(ftzh) # look back time 
+
+            self._nmf_t_lb_sfh      = nmf_tsfh
+            self._nmf_t_lb_zh       = nmf_tzh[::-1]
+            self._nmf_sfh_basis     = nmf_sfh 
+            self._nmf_zh_basis      = nmf_zh[:,::-1]
+        else:
+            raise NotImplementedError
+
+        self._Ncomp_sfh = self._nmf_sfh_basis.shape[0]
+        self._Ncomp_zh = self._nmf_zh_basis.shape[0]
+        
+        # SFH bases as a function of lookback time 
+        self._sfh_basis = [
+                Interp.InterpolatedUnivariateSpline(
+                    self._nmf_t_lb_sfh, 
+                    self._nmf_sfh_basis[i], k=1) 
+                for i in range(self._Ncomp_sfh)
+                ]
+        self._zh_basis = [
+                Interp.InterpolatedUnivariateSpline(
+                    self._nmf_t_lb_zh, 
+                    self._nmf_zh_basis[i], k=1) 
+                for i in range(self._Ncomp_zh)]
+        
+        # high resolution tabulated SFHs used in the SFH calculation
+        self._t_lb_hr       = np.linspace(0., 13.8, int(5e4))
+        self._sfh_basis_hr  = [sfh_basis(self._t_lb_hr) for sfh_basis in self._sfh_basis]
+        return None 
 
     def _init_model(self, **kwargs): 
         ''' some under the hood initalization of the model and its
@@ -1194,5 +1165,3 @@ class Tau(Model):
                 dust_type=dust_type,            
                 imf_type=imf_type)      # chabrier 
         return None  
-
-

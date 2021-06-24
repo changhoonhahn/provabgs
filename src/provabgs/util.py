@@ -34,7 +34,7 @@ def jansky_cgs():
     return 1e-23
 
 
-def tlookback_bin_edges(): 
+def tlookback_bin_edges(tage): 
     ''' hardcoded log-spaced lookback time bin edges. Bins have 0.1 log10(Gyr)
     widths. See `nb/tlookback_binning.ipynb` for comparison of linear and
     log-spaced binning. With log-space we reproduce more accurate spectra with
@@ -43,7 +43,10 @@ def tlookback_bin_edges():
     bin_edges = np.zeros(43)
     bin_edges[1:-1] = 10**(6.05 + 0.1 * np.arange(41) - 9.)
     bin_edges[-1] = 13.8
-    return bin_edges
+    if tage is None: 
+        return bin_edges
+    else: 
+        return np.concatenate([bin_edges[bin_edges < tage], [tage]])
 
 # --- the code below is taken from the `desispec` and `redrock` python package.
 # I've copied the code over instead of importing it to reduce package
@@ -248,3 +251,26 @@ def trapz_rebin(x, y, xnew=None, edges=None):
     _trapz_rebin(x, y, edges, result)
 
     return result
+
+
+def betterstep(bins, y, **kwargs):
+    """A 'better' version of matplotlib's step function 
+    (from https://gist.github.com/dfm/e9d36037e363f04acbc668ec7c408237)
+    
+    Given a set of bin edges and bin heights, this plots the thing
+    that I wish matplotlib's ``step`` command plotted. All extra
+    arguments are passed directly to matplotlib's ``plot`` command.
+    
+    Args:
+        bins: The bin edges. This should be one element longer than
+            the bin heights array ``y``.
+        y: The bin heights.
+        ax (Optional): The axis where this should be plotted.
+    
+    """
+    import matplotlib.pyplot as plt  
+    new_x = [a for row in zip(bins[:-1], bins[1:]) for a in row]
+    new_y = [a for row in zip(y, y) for a in row]
+    ax = kwargs.pop("ax", plt.gca())
+    return ax.plot(new_x, new_y, **kwargs)
+
