@@ -355,14 +355,12 @@ class NMF(Model):
             theta['beta3_sfh'], theta['beta4_sfh']]), 1.), "SFH basis coefficients should add up to 1"
         
         # NMF SFH(t) noramlized to 1 **without burst**
-        tlb_edges, sfh = self.SFH(
-                np.concatenate([[0.], tt[1:]]), 
-                tage=tage, _burst=False)  
-        tages = 0.5 * (tlb_edges[1:] + tlb_edges[:-1])
+        tlb_edges, sfh = self.SFH(np.concatenate([[0.], tt[1:]]), tage=tage, _burst=False)  
         # NMF ZH at lookback time bins 
         _, zh = self.ZH(tt, tage=tage)
         
-        dt = np.diff(tlb_edges)
+        tages = 0.5 * (tlb_edges[1:] + tlb_edges[:-1]) # ages of SSP
+        dt = np.diff(tlb_edges) # bin widths
     
         # look over log-spaced lookback time bins and add up SSPs
         for i, tage in enumerate(tages): 
@@ -415,29 +413,22 @@ class NMF(Model):
         tburst = theta['tburst'] 
         assert tburst > 1e-2, "burst currently only supported for tburst > 1e-2 Gyr"
 
-        dust1           = 0. # no birth cloud attenuation for tage > 1e-2 Gyr
-        dust2           = theta['dust2']
-        dust_index      = theta['dust_index']
-
         # get metallicity at tburst 
         zburst = np.sum(np.array([tt_zh[i] * self._zh_basis[i](tburst) 
             for i in range(self._N_nmf_zh)])).clip(self._Z_min, self._Z_max) 
         
         if debug:
             print('zburst=%e' % zburst) 
-            #print('dust1=%f' % dust1) 
             print('dust2=%f' % dust2) 
             print('dust_index=%f' % dust_index) 
     
         # luminosity of SSP at tburst 
         self._ssp.params['logzsol'] = np.log10(zburst/0.0190) # log(Z/Zsun)
-        self._ssp.params['dust1'] = dust1
-        self._ssp.params['dust2'] = dust2 
-        self._ssp.params['dust_index'] = dust_index
+        self._ssp.params['dust1'] = 0. # no birth cloud attenuation for tage > 1e-2 Gyr
+        self._ssp.params['dust2'] = theta['dust2']
+        self._ssp.params['dust_index'] = tehta['dust_index'] 
         
-        wave_rest, lum_burst = self._ssp.get_spectrum(
-                tage=np.clip(tburst, 1e-8, None), 
-                peraa=True) # in units of Lsun/AA
+        wave_rest, lum_burst = self._ssp.get_spectrum(tage=tburst, peraa=True) # in units of Lsun/AA
         # note that this spectrum is normalized such that the total formed
         # mass = 1 Msun
         return wave_rest, lum_burst
