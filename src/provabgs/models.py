@@ -426,7 +426,7 @@ class NMF(Model):
         self._ssp.params['logzsol'] = np.log10(zburst/0.0190) # log(Z/Zsun)
         self._ssp.params['dust1'] = 0. # no birth cloud attenuation for tage > 1e-2 Gyr
         self._ssp.params['dust2'] = theta['dust2']
-        self._ssp.params['dust_index'] = tehta['dust_index'] 
+        self._ssp.params['dust_index'] = theta['dust_index'] 
         
         wave_rest, lum_burst = self._ssp.get_spectrum(tage=tburst, peraa=True) # in units of Lsun/AA
         # note that this spectrum is normalized such that the total formed
