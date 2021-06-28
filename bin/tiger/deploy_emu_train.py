@@ -17,7 +17,7 @@ def deploy_emu_train(model, nbatch, i_wave, n_pcas, Nlayer, Nunits, b_size):
         "#SBATCH --ntasks-per-node=1",
         '#SBATCH --gres=gpu:1', 
         "#SBATCH --partition=general",
-        "#SBATCH --time=47:59:59", 
+        "#SBATCH --time=11:59:59", 
         "#SBATCH --export=ALL",
         "#SBATCH --output=ofiles/emu_%s_%i_%i_%i_%ix%i_%i.o" % (model, nbatch, i_wave, n_pcas, Nlayer, Nunits, b_size),  
         "#SBATCH --mail-type=all",

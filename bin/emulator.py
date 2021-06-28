@@ -11,7 +11,8 @@ from speculator import Speculator
 #-------------------------------------------------------
 # params 
 #-------------------------------------------------------
-model = sys.argv[1]
+version = '0.1'
+model   = sys.argv[1]
 nbatch = int(sys.argv[2])
 i_wave = int(sys.argv[3]) 
 n_pcas = int(sys.argv[4]) 
@@ -24,7 +25,7 @@ assert os.environ['machine'] == 'tiger'
 
 #dat_dir='/scratch/gpfs/chhahn/provabgs/' # hardcoded to tiger directory 
 dat_dir='/tigress/chhahn/provabgs/emulator/'
-wave = np.load(os.path.join(dat_dir, 'wave_fsps.npy')) 
+wave = np.load(os.path.join(dat_dir, 'wave.%s.npy' % model)) 
 
 wave_bins = [
         (wave < 3600), 
@@ -37,12 +38,12 @@ n_wave = np.sum(wave_bins[i_wave])
 
 #-------------------------------------------------------
 if model == 'nmf': n_param = 10
-elif model == 'burst': n_param = 5
+elif model == 'burst': n_param = 4
 else: raise ValueError
 
 # load trained PCA basis object
 print('loading PCA bases')
-fpca = os.path.join(dat_dir, 'fsps.%s.seed0_%i.w%i.pca%i.hdf5' % (model, nbatch-1, i_wave, n_pcas))
+fpca = os.path.join(dat_dir, 'fsps.%s.v%s.seed0_%i.w%i.pca%i.hdf5' % (model, version, nbatch-1, i_wave, n_pcas))
 PCABasis = SpectrumPCA(
         n_parameters=n_param,       # number of parameters
         n_wavelengths=n_wave,       # number of wavelength values
@@ -54,26 +55,15 @@ PCABasis._load_from_file(fpca)
 
 #-------------------------------------------------------
 # training theta and pca 
-_thetas = np.load(os.path.join(dat_dir,
-    'fsps.%s.seed0_%i.w%i.pca%i_parameters.npy' % (model, nbatch-1, i_wave, n_pcas)))
-_pcas = np.load(os.path.join(dat_dir,
-    'fsps.%s.seed0_%i.w%i.pca%i_pca.npy' % (model, nbatch-1, i_wave, n_pcas)))
+_thetas = np.load(fpca.replace('.hdf5', '_parameters.npy'))
+_pcas   = np.load(fpca.replace('.hdf5', '_pca.npy'))
 
 if model == 'nmf': 
-    sps_prior = Infer.load_priors([
-        Infer.FlatDirichletPrior(4, label='sed'),       # flat dirichilet priors
-        Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on ZH coeff
-        Infer.LogUniformPrior(4.5e-5, 4.5e-2, label='sed'), # log uniform priors on ZH coeff
-        Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
-        Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust2
-        Infer.UniformPrior(-3., 1., label='sed'),     # uniform priors on dust_index 
-        Infer.UniformPrior(0., 0.6, label='sed')       # uniformly sample redshift
-        ])
-    # untranform 
-    _thetas = sps_prior.untransform(_thetas)
+    thetas = _thetas[:,1:]
     n_param = 9 
 #elif model == 'burst': 
-#    # convert Z to log Z 
+#    # convert tburst and Z to log tburst and log Z 
+#    _thetas[:,0] = np.log10(_thetas[:,0]) 
 #    _thetas[:,1] = np.log10(_thetas[:,1]) 
 
 # get parameter shift and scale 
@@ -117,8 +107,8 @@ patience = 20
 
 # writeout loss 
 _floss = os.path.join(dat_dir, 
-        'fsps.%s.seed0_%i.w%i.pca%i.%ix%i.%s.loss.dat' % 
-        (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits, desc))
+        '%s.v%s.seed0_%i.w%i.pca%i.%ix%i.%s.loss.dat' % 
+        (model, version, nbatch-1, i_wave, n_pcas, Nlayer, Nunits, desc))
 floss = open(_floss, 'w')
 floss.close()
 
@@ -170,6 +160,6 @@ for i in range(len(lr)):
         if early_stopping_counter >= patience:
             speculator.update_emulator_parameters()
             speculator.save(os.path.join(dat_dir,
-                'fsps.%s.seed0_%i.w%i.pca%i.%ix%i.%s' % 
-                (model, nbatch-1, i_wave, n_pcas, Nlayer, Nunits, desc)))
+                '%s.v%s.seed0_%i.w%i.pca%i.%ix%i.%s' % 
+                (model, version, nbatch-1, i_wave, n_pcas, Nlayer, Nunits, desc)))
             print('Validation loss = %s' % str(best_loss))
