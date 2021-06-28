@@ -27,11 +27,21 @@ fwave   = os.path.join(dat_dir, 'wave.%s.npy' % name)
 wave    = np.load(fwave)
 
 # wavelength bins  
-wave_bin0 = (wave < 3600) 
-wave_bin1 = (wave >= 3600) & (wave < 5500) 
-wave_bin2 = (wave >= 5500) & (wave < 7410) 
-wave_bin3 = (wave >= 7410) 
-wave_bin = [wave_bin0, wave_bin1, wave_bin2, wave_bin3][i_bin]
+wave_bin = [ 
+        (wave >= 1000) & (wave < 2000), 
+        (wave >= 2000) & (wave < 3600), 
+        (wave >= 3600) & (wave < 5500), 
+        (wave >= 5500) & (wave < 7410), 
+        (wave >= 7410) & (wave < 60000)
+        ][i_bin]
+
+str_wbin = [
+        '.w1000_2000', 
+        '.w2000_3600', 
+        '.w3600_5500', 
+        '.w5500_7410', 
+        '.w7410_60000' 
+        ][i_bin]
 
 # batches of fsps spectra
 batches = range(batch0, batch1+1)
@@ -44,7 +54,7 @@ else:
 
 # log(spectra) over wavelength bin 
 fspecs  = [
-        os.path.join(dat_dir, 'fsps.%s.v%s.lnspectrum.seed%i.w%i.npy' % (name, version, ibatch, i_bin)) 
+        os.path.join(dat_dir, 'fsps.%s.v%s.lnspectrum.seed%i%s.npy' % (name, version, ibatch, str_wbin)) 
         for ibatch in batches]
 
 if name == 'nmf': # theta = [b1, b2, b3, b4, g1, g2, dust1, dust2, dust_index, zred]
@@ -53,7 +63,7 @@ elif name == 'burst': # theta = [tburst, zburst, dust1, dust2, dust_index]
     n_param = 4
 
 n_wave  = np.sum(wave_bin) 
-fpca    = os.path.join(dat_dir, 'fsps.%s.v%s.seed%i_%i.w%i.pca%i.hdf5' % (name, version, batch0, batch1, i_bin, n_pca))
+fpca    = os.path.join(dat_dir, 'fsps.%s.v%s.seed%i_%i%s.pca%i.hdf5' % (name, version, batch0, batch1, str_wbin, n_pca))
 print(fpca)
 
 # train PCA basis 
