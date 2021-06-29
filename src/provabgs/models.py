@@ -112,18 +112,28 @@ class Model(object):
             w_z = wave_rest * (1. + _zred)
             d_lum = self._d_lum_z_interp(_zred) 
             flux_z = lum_ssp * UT.Lsun() / (4. * np.pi * d_lum**2) / (1. + _zred) * 1e17 # 10^-17 ergs/s/cm^2/Ang
-
+    
             # apply velocity dispersion 
-            wave_smooth, flux_smooth = self._apply_vdisp(w_z, flux_z, vdisp)
-            
+            if vdisp == 0: 
+                wave_smooth = w_z 
+                flux_smooth = flux_z
+            else: 
+                wave_smooth, flux_smooth = self._apply_vdisp(w_z, flux_z, vdisp)
+
             if wavelength is None: 
                 outwave.append(wave_smooth)
                 outspec.append(flux_smooth)
             else: 
                 outwave.append(wavelength)
-
+                
                 # resample flux to input wavelength  
-                resampflux = UT.trapz_rebin(wave_smooth, flux_smooth, xnew=wavelength) 
+                if np.all(np.diff(wavelength) >=0): 
+                    resampflux = UT.trapz_rebin(wave_smooth, flux_smooth, xnew=wavelength) 
+                else: 
+                    isort = np.argsort(wavelength)
+                    resampflux = np.zeros(len(wavelength))
+                    resampflux[isort] = UT.trapz_rebin(wave_smooth, flux_smooth,
+                            xnew=wavelength[isort]) 
 
                 if resolution is not None: 
                     # apply resolution matrix 
