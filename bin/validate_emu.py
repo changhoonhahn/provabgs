@@ -23,8 +23,7 @@ version = '0.1'
 
 model = 'nmf'
 archs = ['8x256', '8x256', '8x256', '8x256'] # architectures
-n_pcas = [70, 50, 50, 30]
-#n_pcas = [50, 50, 50, 30]
+n_pcas = [30, 50, 50, 30]
 n_param = 10 
 nbatch = 100 
 
@@ -32,7 +31,7 @@ nbatch = 100
 #archs = ['8x256', '8x256', '8x256', '8x256'] # architectures
 #archs = ['10x256', '10x256', '10x256', '10x256'] # architectures
 #archs = ['6x512', '6x512', '6x512', '6x512'] # architectures
-#n_pcas = [70, 50, 50, 30]
+#n_pcas = [50, 50, 50, 30]
 #n_param = 4
 #nbatch = 200 
 
@@ -43,12 +42,19 @@ dat_dir = '/tigress/chhahn/provabgs/emulator/'
 # read in wavelenght values 
 wave = np.load(os.path.join(dat_dir, 'wave.%s.npy' % model))
 
-wave_bins = [
-        (wave < 3600), 
+wave_bins = [# (wave >= 1000) & (wave < 2000), 
+        (wave >= 2000) & (wave < 3600), 
         (wave >= 3600) & (wave < 5500), 
         (wave >= 5500) & (wave < 7410), 
-        (wave >= 7410)]
+        (wave >= 7410) & (wave < 60000)
+        ]
 
+str_wbin = [# '.w1000_2000', 
+        '.w2000_3600', 
+        '.w3600_5500', 
+        '.w5500_7410', 
+        '.w7410_60000' 
+        ]
 
 # read in test parameters and data
 if model == 'nmf': 
@@ -66,7 +72,7 @@ _lnspec_test    = np.load(os.path.join(dat_dir,
     'fsps.%s.v%s.lnspectrum.test.npy' % (model, version)))
 
 # get pca values of test data
-lnspec_pca_test = []
+_wave, lnspec_test, lnspec_pca_test = [], [], [] 
 for i in range(len(n_pcas)):
     n_wave = np.sum(wave_bins[i]) 
     # load trained PCA basis object
@@ -79,33 +85,27 @@ for i in range(len(n_pcas)):
             parameter_selection=None) # pass an optional function that takes in parameter vector(s) and returns True/False for any extra parameter cuts we want to impose on the training sample (eg we may want to restrict the parameter ranges)
     
     fpca = os.path.join(dat_dir, 
-            'fsps.%s.v%s.seed0_%i.w%i.pca%i.hdf5' % (model, version, nbatch-1, i, n_pcas[i]))
+            'fsps.%s.v%s.seed0_%i%s.pca%i.hdf5' % (model, version, nbatch-1, str_wbin[i], n_pcas[i]))
     print('  loading %s' % fpca)
     PCABasis._load_from_file(fpca) 
 
+    _wave.append(wave[wave_bins[i]]) 
     # calculate PCA reconstructed spectra for test set 
     _spec = _lnspec_test[:,wave_bins[i]]
+    lnspec_test.append(_spec)
     normalized_spec = (_spec - PCABasis.spectrum_shift) / PCABasis.spectrum_scale 
 
     # transform to PCA basis and back
     lnspec_pca_test.append(np.dot(normalized_spec, PCABasis.pca_transform_matrix.T))
 
-lnspec_pca_test = np.concatenate(lnspec_pca_test, axis=1) 
-
-lnspec_test = []
-for wave_bin in wave_bins: 
-    lnspec_test.append(_lnspec_test[:,wave_bin])
-lnspec_test = np.concatenate(lnspec_test, axis=1) 
-
-_wave = [] 
-for wave_bin in wave_bins: 
-    _wave.append(wave[wave_bin]) 
 _wave = np.concatenate(_wave)
+lnspec_test     = np.concatenate(lnspec_test, axis=1) 
+lnspec_pca_test = np.concatenate(lnspec_pca_test, axis=1) 
 
 # load speculator 
 emus = [] 
 for i in range(len(wave_bins)): 
-    femu = os.path.join(dat_dir, '%s.v%s.seed0_%i.w%i.pca%i.%s.%s' % (model, version, nbatch-1, i, n_pcas[i], archs[i], desc))
+    femu = os.path.join(dat_dir, '%s.v%s.seed0_%i%s.pca%i.%s.%s' % (model, version, nbatch-1, str_wbin[i], n_pcas[i], archs[i], desc))
     print('   loading %s' % femu)
     _spec = Speculator(restore=True, restore_filename=femu)
     emus.append(_spec)

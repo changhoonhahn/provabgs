@@ -27,14 +27,25 @@ assert os.environ['machine'] == 'tiger'
 dat_dir='/tigress/chhahn/provabgs/emulator/'
 wave = np.load(os.path.join(dat_dir, 'wave.%s.npy' % model)) 
 
-wave_bins = [
-        (wave < 3600), 
+# wavelength bins  
+wave_bin = [ 
+        (wave >= 1000) & (wave < 2000), 
+        (wave >= 2000) & (wave < 3600), 
         (wave >= 3600) & (wave < 5500), 
         (wave >= 5500) & (wave < 7410), 
-        (wave >= 7410)]
+        (wave >= 7410) & (wave < 60000)
+        ][i_wave]
+
+str_wbin = [ 
+        '.w1000_2000', 
+        '.w2000_3600', 
+        '.w3600_5500', 
+        '.w5500_7410', 
+        '.w7410_60000' 
+        ][i_wave]
 
 n_hidden = [Nunits for i in range(Nlayer)]
-n_wave = np.sum(wave_bins[i_wave]) 
+n_wave = np.sum(wave_bin) 
 
 #-------------------------------------------------------
 if model == 'nmf': n_param = 10
@@ -43,7 +54,8 @@ else: raise ValueError
 
 # load trained PCA basis object
 print('loading PCA bases')
-fpca = os.path.join(dat_dir, 'fsps.%s.v%s.seed0_%i.w%i.pca%i.hdf5' % (model, version, nbatch-1, i_wave, n_pcas))
+
+fpca = os.path.join(dat_dir, 'fsps.%s.v%s.seed0_%i%s.pca%i.hdf5' % (model, version, nbatch-1, str_wbin, n_pcas))
 PCABasis = SpectrumPCA(
         n_parameters=n_param,       # number of parameters
         n_wavelengths=n_wave,       # number of wavelength values
@@ -59,7 +71,7 @@ _thetas = np.load(fpca.replace('.hdf5', '_parameters.npy'))
 _pcas   = np.load(fpca.replace('.hdf5', '_pca.npy'))
 
 if model == 'nmf': 
-    thetas = _thetas[:,1:]
+    _thetas = _thetas[:,1:]
     n_param = 9 
 #elif model == 'burst': 
 #    # convert tburst and Z to log tburst and log Z 
@@ -85,7 +97,7 @@ pca_valid   = tf.convert_to_tensor(_pcas[Ntrain:,:].astype(np.float32))
 # train Speculator
 speculator = Speculator(
         n_parameters=n_param, # number of model parameters
-        wavelengths=wave[wave_bins[i_wave]], # array of wavelengths
+        wavelengths=wave[wave_bin], # array of wavelengths
         pca_transform_matrix=PCABasis.pca_transform_matrix,
         parameters_shift=theta_shift, # PCABasis.parameters_shift,
         parameters_scale=theta_scale, # PCABasis.parameters_scale,
@@ -107,8 +119,8 @@ patience = 20
 
 # writeout loss 
 _floss = os.path.join(dat_dir, 
-        '%s.v%s.seed0_%i.w%i.pca%i.%ix%i.%s.loss.dat' % 
-        (model, version, nbatch-1, i_wave, n_pcas, Nlayer, Nunits, desc))
+        '%s.v%s.seed0_%i%s.pca%i.%ix%i.%s.loss.dat' % 
+        (model, version, nbatch-1, str_wbin, n_pcas, Nlayer, Nunits, desc))
 floss = open(_floss, 'w')
 floss.close()
 
@@ -160,6 +172,6 @@ for i in range(len(lr)):
         if early_stopping_counter >= patience:
             speculator.update_emulator_parameters()
             speculator.save(os.path.join(dat_dir,
-                '%s.v%s.seed0_%i.w%i.pca%i.%ix%i.%s' % 
-                (model, version, nbatch-1, i_wave, n_pcas, Nlayer, Nunits, desc)))
+                '%s.v%s.seed0_%i%s.pca%i.%ix%i.%s' % 
+                (model, version, nbatch-1, str_wbin, n_pcas, Nlayer, Nunits, desc)))
             print('Validation loss = %s' % str(best_loss))
