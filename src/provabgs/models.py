@@ -593,7 +593,7 @@ class NMF(Model):
         '''
         wbins = ['2000_3600', '3600_5500', '5500_7410', '7410_60000']
         # load NMF emulator 
-        npcas = [30, 50, 50, 30]
+        npcas = [50, 50, 50, 30]
         f_nn = lambda npca, i: 'nmf.v0.1.seed0_99.w%s.pca%i.8x256.nbatch250.pkl' % (wbins[i], npca)
         
         self._nmf_n_emu         = len(npcas)
@@ -612,7 +612,6 @@ class NMF(Model):
         self._nmf_emu_waves = np.concatenate(self._nmf_emu_wave) 
 
         # load burst emulator
-        npcas = [50, 50, 50, 30]
         f_nn = lambda npca, i: 'burst.v0.1.seed0_199.w%s.pca%i.6x512.nbatch250.pkl' % (wbins[i], npca)
         self._burst_n_emu = len(npcas)
         self._burst_emu_params    = [] 
