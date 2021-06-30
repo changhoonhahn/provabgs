@@ -49,8 +49,7 @@ class Model(object):
                 Interp.InterpolatedUnivariateSpline(_z, _d_lum_cm, k=3)
         print('input parameters : %s' % ', '.join(self._parameters))
     
-    def sed(self, tt, zred, vdisp=0., wavelength=None, resolution=None,
-            filters=None, debug=False):
+    def sed(self, tt, zred, vdisp=0., wavelength=None, resolution=None, filters=None):
         ''' compute the redshifted spectral energy distribution (SED) for a
         given set of parameter values and redshift.
        
@@ -79,9 +78,6 @@ class Model(object):
             Photometric bandpass filter to generate photometry.
             `speclite.FilterResponse` object. 
 
-        debug: boolean
-            If True, prints out a number lines to help debugging 
-
 
         Returns
         -------
@@ -100,18 +96,17 @@ class Model(object):
        
         outwave, outspec, maggies = [], [], [] 
         for _tt, _zred in zip(tt, zred): 
-
-            if debug: print('Model.sed: redshift = %f' % _zred)
-            _tage = self.cosmo.age(_zred).value 
+            #_tage = self.cosmo.age(_zred).value 
+            _tage = self._tage_z_interp(_zred)
 
             # get SSP luminosity
             wave_rest, lum_ssp = self._sps_model(_tt, _tage)
-            if debug: print('Model.sed: ssp lum', lum_ssp)
 
             # redshift the spectra
             w_z = wave_rest * (1. + _zred)
             d_lum = self._d_lum_z_interp(_zred) 
-            flux_z = lum_ssp * UT.Lsun() / (4. * np.pi * d_lum**2) / (1. + _zred) * 1e17 # 10^-17 ergs/s/cm^2/Ang
+            #flux_z = lum_ssp * UT.Lsun() / (4. * np.pi * d_lum**2) / (1. + _zred) * 1e17 # 10^-17 ergs/s/cm^2/Ang
+            flux_z = lum_ssp * 3.846e50 / (4. * np.pi * d_lum**2) / (1. + _zred) # 10^-17 ergs/s/cm^2/Ang
     
             # apply velocity dispersion 
             if vdisp == 0: 
@@ -299,7 +294,7 @@ class NMF(Model):
 
         # NMF from emulator 
         lum_ssp = np.exp(self._emu_nmf(tt_nmf)) 
-    
+   
         # add burst contribution 
         if self._burst: 
             fburst = theta['fburst']
@@ -467,8 +462,8 @@ class NMF(Model):
         for iwave in range(self._nmf_n_emu): # wave bins
             W_, b_, alphas_, betas_, parameters_shift_, parameters_scale_,\
                     pca_shift_, pca_scale_, spectrum_shift_, spectrum_scale_,\
-                    pca_transform_matrix_, _, _, wavelengths, _, _, n_layers, _ =\
-                    self._nmf_emu_params[iwave] 
+                    pca_transform_matrix_ = self._nmf_emu_params[iwave][:11]
+            n_layers = self._nmf_emu_params[iwave][-2]
 
             # forward pass through the network
             act = []
@@ -525,68 +520,36 @@ class NMF(Model):
             theta['dust2'], 
             theta['dust_index']]).flatten()
 
-        logflux = [] 
-        for iwave in range(self._burst_n_emu): # wave bins
-            W_, b_, alphas_, betas_, parameters_shift_, parameters_scale_,\
-                    pca_shift_, pca_scale_, spectrum_shift_, spectrum_scale_,\
-                    pca_transform_matrix_, _, _, wavelengths, _, _, n_layers, _ =\
-                    self._burst_emu_params[iwave] 
-
-            # forward pass through the network
-            act = []
-            layers = [(tt - parameters_shift_)/parameters_scale_]
-            for i in range(n_layers-1):
-
-                # linear network operation
-                act.append(np.dot(layers[-1], W_[i]) + b_[i])
-
-                # pass through activation function
-                layers.append((betas_[i] + (1.-betas_[i])*1./(1.+np.exp(-alphas_[i]*act[-1])))*act[-1])
-
-            # final (linear) layer -> (normalized) PCA coefficients
-            layers.append(np.dot(layers[-1], W_[-1]) + b_[-1])
-
-            # rescale PCA coefficients, multiply out PCA basis -> normalized spectrum, shift and re-scale spectrum -> output spectrum
-            logflux.append(np.dot(layers[-1]*pca_scale_ + pca_shift_,
-                pca_transform_matrix_)*spectrum_scale_ + spectrum_shift_)
-        return np.concatenate(logflux) 
+        return self._emu_burst_nn(tt)
     
-    def _emu_burst_(self, tt, debug=False): 
-        ''' calculate the dust attenuated luminosity contribution from a SSP
-        that corresponds to the burst using an emulator. This spectrum is
-        normalized such that the total formed mass is 1 Msun, **not** fburst 
-
-        Notes
-        -----
-        * currently luminosity contribution is set to 0 if tburst > 13.27 due
-        to FSPS numerical accuracy  
+    def _emu_burst_nn(self, tt): 
+        ''' burst emulator neural network 
         '''
         logflux = [] 
         for iwave in range(self._burst_n_emu): # wave bins
             W_, b_, alphas_, betas_, parameters_shift_, parameters_scale_,\
                     pca_shift_, pca_scale_, spectrum_shift_, spectrum_scale_,\
-                    pca_transform_matrix_, _, _, wavelengths, _, _, n_layers, _ =\
-                    self._burst_emu_params[iwave] 
+                    pca_transform_matrix_ = self._burst_emu_params[iwave][:11]
+            n_layers = self._burst_emu_params[iwave][-2]
 
             # forward pass through the network
             act = []
             layers = [(tt - parameters_shift_)/parameters_scale_]
             for i in range(n_layers-1):
-
                 # linear network operation
-                act.append(np.dot(layers[-1], W_[i]) + b_[i])
-
+                act.append(np.matmul(layers[-1], W_[i]) + b_[i])
+                
                 # pass through activation function
                 layers.append((betas_[i] + (1.-betas_[i])*1./(1.+np.exp(-alphas_[i]*act[-1])))*act[-1])
 
             # final (linear) layer -> (normalized) PCA coefficients
-            layers.append(np.dot(layers[-1], W_[-1]) + b_[-1])
+            layers.append(np.matmul(layers[-1], W_[-1]) + b_[-1])
 
             # rescale PCA coefficients, multiply out PCA basis -> normalized spectrum, shift and re-scale spectrum -> output spectrum
-            logflux.append(np.dot(layers[-1]*pca_scale_ + pca_shift_,
+            logflux.append(np.matmul(layers[-1]*pca_scale_ + pca_shift_,
                 pca_transform_matrix_)*spectrum_scale_ + spectrum_shift_)
         return np.concatenate(logflux) 
-
+    
     def _load_emulator(self): 
         ''' read in pickle files that contains the parameters for the FSPS
         emulator that is split into wavelength bins
