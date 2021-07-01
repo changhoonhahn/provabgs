@@ -624,8 +624,7 @@ class desiMCMC(MCMC):
         
         # calculate SED model(theta) 
         _sed = self.model.sed(tt_sed, zred, vdisp=vdisp, 
-                wavelength=wave_obs, resolution=resolution, filters=filters,
-                debug=debug)
+                wavelength=wave_obs, resolution=resolution, filters=filters)
         if 'photo' in obs_data_type: _, _flux, photo = _sed
         else: _, _flux = _sed
 

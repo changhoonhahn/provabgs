@@ -610,7 +610,7 @@ class NMF(Model):
             bin edges of log-spaced look back time
 
         sfh : 1d or 2d array 
-            star formation history at lookback time specified by t 
+            star formation history in Msun/yr
         '''
         if zred is None and tage is None: 
             raise ValueError("specify either the redshift or age of the galaxy")
@@ -627,16 +627,16 @@ class NMF(Model):
         # log-spaced lookback time bin edges 
         tlb_edges = UT.tlookback_bin_edges(tage)
 
-        sfh_hr = np.sum(np.array([tt_sfh[:,i][:,None] *
-            self._sfh_basis_hr[i][None,:] for i in range(self._N_nmf_sfh)]),
+        sfh_basis_tlb = np.array([
+            UT.trapz_rebin(self._t_lb_hr, _sfh_basis, edges=tlb_edges) 
+            for _sfh_basis in self._sfh_basis_hr])
+
+        sfh = np.sum(np.array([tt_sfh[:,i][:,None] *
+            sfh_basis_tlb[i][None,:] for i in range(self._N_nmf_sfh)]),
             axis=0)
 
-        sfh = np.array([UT.trapz_rebin(self._t_lb_hr, _sfh_hr, edges=tlb_edges)
-            for _sfh_hr in sfh_hr])
-
-        dt = np.diff(tlb_edges)
-        sfh /= np.sum(dt * sfh, axis=1)[:,None]
-        
+        sfh /= np.sum(1e9 * np.diff(tlb_edges) * sfh, axis=1)[:,None] # normalize 
+      
         # add starburst 
         if self._burst and _burst: 
             fburst = theta['fburst'] # fraction of stellar mass from star burst
@@ -657,7 +657,7 @@ class NMF(Model):
         return tlb_edges, sfh 
 
     def _SFH_burst(self, tburst, tedges): 
-        ''' place a single star-burst event on a given *evenly spaced* lookback time grid
+        ''' place a single star-burst event on the SFH
         '''
         tburst = np.atleast_1d(tburst)
         dts = np.diff(tedges)
@@ -669,7 +669,7 @@ class NMF(Model):
         iburst = np.digitize(tburst[has_burst], tedges)-1
 
         sfh = np.zeros((len(tburst), len(tedges)-1))
-        sfh[has_burst, iburst] += 1. / dts[iburst]
+        sfh[has_burst, iburst] += 1. / (1e9 * dts[iburst])
         return sfh 
    
     def avgSFR(self, tt, zred=None, tage=None, dt=1):
@@ -709,31 +709,35 @@ class NMF(Model):
         tlb_edges = UT.tlookback_bin_edges(tage)
         assert dt < tlb_edges[-1]
 
-        sfh_hr = np.sum(np.array([tt_sfh[:,i][:,None] *
-            self._sfh_basis_hr[i][None,:] for i in range(self._N_nmf_sfh)]),
+        sfh_basis_tlb = np.array([
+            UT.trapz_rebin(self._t_lb_hr, _sfh_basis, edges=tlb_edges) 
+            for _sfh_basis in self._sfh_basis_hr])
+
+        sfh = np.sum(np.array([tt_sfh[:,i][:,None] *
+            sfh_basis_tlb[i][None,:] for i in range(self._N_nmf_sfh)]),
             axis=0)
 
-        sfh = np.array([UT.trapz_rebin(self._t_lb_hr, _sfh_hr, edges=tlb_edges)
-            for _sfh_hr in sfh_hr])
         sfh /= np.sum(np.diff(tlb_edges) * sfh, axis=1)[:,None] # normalize 
-      
+        
+        # calculate stellar mass formed over 0-dt 
         i_dt = np.digitize(dt, tlb_edges) - 1
-        avg_sfr = np.sum(np.diff(tlb_edges)[:i_dt][None,:] * sfh[:,:i_dt], axis=1) 
-        avg_sfr += (dt - tlb_edges[i_dt]) * sfh[:,i_dt]
+        Mform = np.sum(np.diff(tlb_edges)[:i_dt][None,:] * sfh[:,:i_dt], axis=1) 
+        Mform += (dt - tlb_edges[i_dt]) * sfh[:,i_dt]
         
         # add starburst event 
         if self._burst: 
             fburst = theta['fburst'] # fraction of stellar mass from star burst
             tburst = theta['tburst'] # time of star burst
        
-            noburst = (tburst > dt)
+            noburst = (tburst > tage)
             fburst[noburst] = 0. 
+            Mform *= (1. - fburst)
             
-            avg_sfr *= (1. - fburst)
-            avg_sfr += fburst
+            burst_dt = (tburst < dt)
+            Mform[burst_dt] += theta['fburst'][burst_dt]
 
         # multiply by stellar mass 
-        avg_sfr *= 10**theta['logmstar']
+        avg_sfr = Mform *  10**theta['logmstar'] / dt / 1e9
         return avg_sfr
 
     def ZH(self, tt, zred=None, tage=None): 
@@ -796,7 +800,7 @@ class NMF(Model):
         _, zh = self.ZH(tt, tage=tage, zred=zred) 
 
         # mass weighted average
-        z_mw = np.sum(np.diff(tlb_edge)[None,:] * sfh * zh, axis=1) / (10**theta['logmstar']) 
+        z_mw = np.sum(1e9 * np.diff(tlb_edge)[None,:] * sfh * zh, axis=1) / (10**theta['logmstar']) 
         return z_mw 
 
     def _load_NMF_bases(self, name='tojeiro.4comp'): 
