@@ -321,6 +321,8 @@ class MCMC(object):
             logp0 = -0.5*min_result['fun']
         else: 
             tt0 = theta_start 
+            if tt0.shape[0] == nwalkers: return tt0
+
             logp0 = self.lnPost(tt0, *lnpost_args, **lnpost_kwargs) 
         if debug:
             print('initial theta = [%s]' % ', '.join([str(_t) for _t in tt0])) 
