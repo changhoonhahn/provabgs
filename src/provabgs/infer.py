@@ -806,7 +806,7 @@ class desiMCMC(MCMC):
         
         _sed = self.model.sed(tt_sed, zred, vdisp=vdisp, wavelength=wave_obs,
                 resolution=lnpost_kwargs['resolution'],
-                filters=lnpost_kwargs['filters'], debug=debug)
+                filters=lnpost_kwargs['filters'])
         if 'photo' in obs_data_type: 
             _, _flux, photo = _sed
         else: _, _flux = _sed
@@ -865,6 +865,15 @@ class nsaMCMC(desiMCMC):
                 sdss_z = specFilter.load_filter('sdss2010-z')
 
                 filters = [fuv, nuv, sdss_u, sdss_g, sdss_r, sdss_i, sdss_z]
+            elif bands == 'sdss':
+                # load sdss filters
+                sdss_u = specFilter.load_filter('sdss2010-u')
+                sdss_g = specFilter.load_filter('sdss2010-g')
+                sdss_r = specFilter.load_filter('sdss2010-r')
+                sdss_i = specFilter.load_filter('sdss2010-i')
+                sdss_z = specFilter.load_filter('sdss2010-z')
+
+                filters = [sdss_u, sdss_g, sdss_r, sdss_i, sdss_z]
             else: 
                 raise NotImplementedError("specified bands not implemented") 
         else: 
