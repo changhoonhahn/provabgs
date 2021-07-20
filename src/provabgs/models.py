@@ -803,6 +803,22 @@ class NMF(Model):
         z_mw = np.sum(1e9 * np.diff(tlb_edge)[None,:] * sfh * zh, axis=1) / (10**theta['logmstar']) 
         return z_mw 
 
+    def tage_MW(self, tt, tage=None, zred=None):
+        ''' given theta calculate mass weighted age of the galaxy 
+        '''
+        if tage is None and zred is None: 
+            raise ValueError("specify either zred or tage") 
+        if tage is not None and zred is not None: 
+            raise ValueError("specify either zred or tage") 
+
+        theta = self._parse_theta(tt) 
+        tlb_edge, sfh = self.SFH(tt, tage=tage, zred=zred) # get SFH 
+        th = 0.5 * (tlb_edge[1:] + tlb_edge[:-1]) 
+
+        # mass weighted average
+        t_mw = np.sum(1e9 * np.diff(tlb_edge)[None,:] * sfh * th, axis=1) / (10**theta['logmstar']) 
+        return t_mw 
+
     def _load_NMF_bases(self, name='tojeiro.4comp'): 
         ''' read in NMF SFH and ZH bases. These bases are used to reduce the
         dimensionality of the SFH and ZH. 
