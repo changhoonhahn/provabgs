@@ -274,3 +274,13 @@ def betterstep(bins, y, **kwargs):
     ax = kwargs.pop("ax", plt.gca())
     return ax.plot(new_x, new_y, **kwargs)
 
+
+def flatten_chain(chain): 
+    ''' flatten mcmc chain. If chain object is 2D then it assumes it's
+    already flattened. 
+    '''
+    if len(chain.shape) == 2: return chain # already flat 
+
+    s = list(chain.shape[1:])
+    s[0] = np.prod(chain.shape[:2]) 
+    return chain.reshape(s)
