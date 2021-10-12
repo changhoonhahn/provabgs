@@ -4,8 +4,10 @@ script for generating training and testing data for the
 NMF portion of the SPS emulator 
 
 Notes: 
-* 2021/06/21: lower upper limit on metalliicty history; wider wavelength range
-    that extends to FUV 
+    * 2021/10/12: modified redshift range to 0.3 < z < 1.5 to construct training 
+        data for LRG 
+    * 2021/06/21: lower upper limit on metalliicty history; wider wavelength range
+        that extends to FUV 
 '''
 import os, sys
 import numpy as np 
@@ -18,13 +20,18 @@ mp.freeze_support()
 # input 
 ###########################################################################################
 name    = 'nmf' 
-version = '0.1'
+version = 'lrg.0.1'
 try: 
     ibatch = int(sys.argv[1]) 
 except ValueError: 
     ibatch = sys.argv[1]
     assert ibatch == 'test'
 ncpu    = int(sys.argv[2]) 
+
+# hardcoded to NERSC directory  for LRG
+#dat_dir='/global/cscratch1/sd/chahah/provabgs/emulator' # hardcoded to NERSC directory 
+# for LRG 
+dat_dir='/global/cscratch1/sd/chahah/provabgs/emulator/lrg/' 
 ###########################################################################################
 
 # priors of burst component 
@@ -35,10 +42,11 @@ priors = Infer.load_priors([
     Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1 
     Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust2
     Infer.UniformPrior(-3., 1., label='sed'),     # uniform priors on dust_index 
-    Infer.UniformPrior(0., 0.6, label='sed')       # uniformly sample redshift
+    Infer.UniformPrior(0.3, 1.5, label='sed')       # uniformly sample redshift range of LRG
     ])
+# redshift range for BGS 
+#    Infer.UniformPrior(0., 0.6, label='sed')       # uniformly sample redshift
 
-dat_dir='/global/cscratch1/sd/chahah/provabgs/emulator' # hardcoded to NERSC directory 
 if ibatch == 'test': 
     np.random.seed(123456) 
     nspec = 100000 # batch size 
@@ -105,19 +113,15 @@ print('  saving ln(spectra) to %s' % fspectrum)
 np.save(fspectrum, np.array(logspectra))
 print()  
 
-# divide spectra into 4 wavelength lengths determined by FSPS wavelength
-# binning  
-# 1. wave  < 3600 (FUV-NUV wavelenght bins dlambda = 20A) 
-# 2. 3600 < wave < 5500 (optical wavelength bins dlambda = 0.9)
-# 3. 5500 < wave < 7410 (optical wavelength bins dlambda = 0.9)
-# 4. 7410 < wave < 59900 (NIR-IR wavelength bins dlambda > 20)
-print('  dividing wavelengths')
-wave_bin0 = (wave < 3600) 
+# divide spectra into wavelength bins 
+wave_bin00= (wave >= 1000) & (wave < 2000) 
+wave_bin0 = (wave >= 2000) & (wave < 3600) 
 wave_bin1 = (wave >= 3600) & (wave < 5500) 
 wave_bin2 = (wave >= 5500) & (wave < 7410) 
-wave_bin3 = (wave >= 7410) 
+wave_bin3 = (wave >= 7410) & (wave < 60000)
 
-np.save(fspectrum.replace('.npy', '.w0.npy'), np.array(logspectra)[:,wave_bin0])
-np.save(fspectrum.replace('.npy', '.w1.npy'), np.array(logspectra)[:,wave_bin1])
-np.save(fspectrum.replace('.npy', '.w2.npy'), np.array(logspectra)[:,wave_bin2])
-np.save(fspectrum.replace('.npy', '.w3.npy'), np.array(logspectra)[:,wave_bin3])
+np.save(fspectrum.replace('.npy', '.w1000_2000.npy'), np.array(logspectra)[:,wave_bin00])
+np.save(fspectrum.replace('.npy', '.w2000_3600.npy'), np.array(logspectra)[:,wave_bin0])
+np.save(fspectrum.replace('.npy', '.w3600_5500.npy'), np.array(logspectra)[:,wave_bin1])
+np.save(fspectrum.replace('.npy', '.w5500_7410.npy'), np.array(logspectra)[:,wave_bin2])
+np.save(fspectrum.replace('.npy', '.w7410_60000.npy'), np.array(logspectra)[:,wave_bin3])
