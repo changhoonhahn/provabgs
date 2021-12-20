@@ -227,8 +227,9 @@ class MCMC(object):
         return output 
 
     def _zeus(self, lnpost_args, lnpost_kwargs, nwalkers=100, niter=1000,
-            burnin=100, opt_maxiter=1000, debug=False,
-            writeout=None, overwrite=False, theta_start=None, progress=True, **kwargs): 
+            burnin=100, opt_maxiter=1000, debug=False, writeout=None,
+            overwrite=False, theta_start=None, progress=True, pool=None,
+            **kwargs): 
         ''' sample posterior distribution using `zeus`
     
         
@@ -276,7 +277,8 @@ class MCMC(object):
                 self.ndim_sampling, 
                 self.lnPost, 
                 args=lnpost_args, 
-                kwargs=lnpost_kwargs)
+                kwargs=lnpost_kwargs,  
+                pool=pool)
         zeus_sampler.run_mcmc(start, burnin + niter, progress=progress)
 
         _chain = zeus_sampler.get_chain()[burnin:,:,:]
@@ -490,7 +492,7 @@ class desiMCMC(MCMC):
             vdisp=150., mask=None, bands=None, sampler='emcee',
             nwalkers=100, niter=1000, burnin=100, maxiter=200000,
             opt_maxiter=100, theta_start=None, writeout=None, overwrite=False, debug=False,
-            progress=True, **kwargs): 
+            progress=True, pool=None, **kwargs): 
         ''' run MCMC using `emcee` to infer the posterior distribution of the
         model parameters given spectroscopy and/or photometry. The function 
         outputs a dictionary with the median theta of the posterior as well as 
@@ -607,6 +609,7 @@ class desiMCMC(MCMC):
                 writeout=writeout, 
                 overwrite=overwrite, 
                 progress=progress, 
+                pool=pool,
                 debug=debug) 
         return output  
 

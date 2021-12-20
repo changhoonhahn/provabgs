@@ -291,7 +291,9 @@ class NMF(Model):
             theta['beta3_sfh'], theta['beta4_sfh'], theta['gamma1_zh'],
             theta['gamma2_zh'], theta['dust1'], theta['dust2'],
             theta['dust_index'], [tage]])#zred]])
-
+        
+        assert theta['gamma2_zh'] < 2.0e-2
+        assert theta['gamma1_zh'] > 4.5e-5
         # NMF from emulator 
         lum_ssp = np.exp(self._emu_nmf(tt_nmf)) 
    
@@ -368,7 +370,7 @@ class NMF(Model):
     
         # look over log-spaced lookback time bins and add up SSPs
         for i, tage in enumerate(tages): 
-            m = dt[i] * sfh[i] # mass formed in this bin 
+            m = 1e9 * dt[i] * sfh[i] # mass formed in this bin 
             if m == 0 and i != 0: continue 
 
             self._ssp.params['logzsol'] = np.log10(zh[i]/0.0190) # log(Z/Zsun)
