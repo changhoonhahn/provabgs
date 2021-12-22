@@ -48,6 +48,28 @@ def tlookback_bin_edges(tage):
     else: 
         return np.concatenate([bin_edges[bin_edges < tage], [tage]])
 
+
+def readDESIspec(ffits): 
+    ''' read DESI spectra fits file
+
+    :params ffits: 
+        name of fits file  
+    
+    :returns spec:
+        dictionary of spectra
+    '''
+    fitobj = fits.open(ffits)
+    
+    spec = {} 
+    for i_k, k in enumerate(['wave', 'flux', 'ivar']): 
+        spec[k+'_b'] = fitobj[3+i_k].data
+        spec[k+'_r'] = fitobj[8+i_k].data
+        spec[k+'_z'] = fitobj[13+i_k].data
+
+    spec['TARGETID'] = fitobj[1].data['TARGETID']
+    return spec 
+
+
 # --- the code below is taken from the `desispec` and `redrock` python package.
 # I've copied the code over instead of importing it to reduce package
 # dependencies.

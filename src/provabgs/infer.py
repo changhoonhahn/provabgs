@@ -383,7 +383,6 @@ class MCMC(object):
             print('log Posterior = %f' % (flat_log_prob[i_max]))
     
         output = {} 
-        output['prior_range'] = self.prior.range 
         output['theta_bestfit'] = theta_bestfit
         
         if writeout is None:
