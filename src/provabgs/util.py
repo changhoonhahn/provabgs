@@ -164,12 +164,41 @@ def centers2edges(centers):
 
     return edges
 
+
+@numba.jit(nopython=True, fastmath=True)
+def pcaMLP(tt, W0, W1, W2, b0, b1, b2, alphas_, betas_,  param_shift, param_scale, 
+        pca_shift_, pca_scale_, pca_transform_matrix_, n_layers):
+    ''' simple MLP implemented in float32 to exploit numba speedup.
+    '''
+    one = np.float32(1.)
+    # forward pass through the network
+    layers = (tt - param_shift)/param_scale
+
+    # linear network operation
+    act = np.dot(layers, W0) + b0
+
+    # pass through activation function
+    layers = ((betas_[0] + (one - betas_[0]) /(one+np.exp(-alphas_[0]*act)))*act)
+
+    for i in range(1,n_layers-1):
+        # linear network operation
+        act = np.dot(layers, W1[i-1]) + b1[i-1]
+
+        # pass through activation function
+        layers = ((betas_[i] + (one - betas_[i]) / (one+np.exp(-alphas_[i] * act))) * act)
+
+    # final (linear) layer -> (normalized) PCA coefficients
+    layers = np.dot(layers, W2) + b2
+
+    # rescale PCA coefficients, multiply out PCA basis -> normalized spectrum, shift and re-scale spectrum -> output spectrum
+    pca = np.dot(layers * pca_scale_ + pca_shift_, pca_transform_matrix_)
+    return pca
+
 # This code is purposely written in a very "C-like" way.  The logic
 # being that it may help numba optimization and also makes it easier
 # if it ever needs to be ported to Cython.  Actually Cython versions
 # of this code have already been tested and shown to perform no better
 # than numba on Intel haswell and KNL architectures.
-
 @numba.jit
 def _trapz_rebin(x, y, edges, results):
     '''

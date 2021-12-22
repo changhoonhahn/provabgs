@@ -459,31 +459,21 @@ class NMF(Model):
         for i in range(1,3): 
             _tt[i] = 1. - (tt[i] / np.prod(_tt[:i]))
         _tt[3:] = tt[4:]
+        _tt = _tt.astype(np.float32)
 
         logflux = [] 
         for iwave in range(self._nmf_n_emu): # wave bins
-            W_, b_, alphas_, betas_, parameters_shift_, parameters_scale_,\
+
+            W0, W1, W2, b0, b1, b2, alphas_, betas_, param_shift, param_scale,\
                     pca_shift_, pca_scale_, spectrum_shift_, spectrum_scale_,\
-                    pca_transform_matrix_ = self._nmf_emu_params[iwave][:11]
-            n_layers = self._nmf_emu_params[iwave][-2]
-
-            # forward pass through the network
-            act = []
-            layers = [(_tt - parameters_shift_)/parameters_scale_]
-            for i in range(n_layers-1):
-
-                # linear network operation
-                act.append(np.dot(layers[-1], W_[i]) + b_[i])
-
-                # pass through activation function
-                layers.append((betas_[i] + (1.-betas_[i])*1./(1.+np.exp(-alphas_[i]*act[-1])))*act[-1])
-
-            # final (linear) layer -> (normalized) PCA coefficients
-            layers.append(np.dot(layers[-1], W_[-1]) + b_[-1])
-
-            # rescale PCA coefficients, multiply out PCA basis -> normalized spectrum, shift and re-scale spectrum -> output spectrum
-            logflux.append(np.dot(layers[-1]*pca_scale_ + pca_shift_,
-                pca_transform_matrix_)*spectrum_scale_ + spectrum_shift_)
+                    pca_transform_matrix_ = self._nmf_emu_params[iwave]
+            n_layers = self._nmf_emu_nlayers[iwave]
+            
+            # PCA coefficients 
+            pca_emu = UT.pcaMLP(_tt,  W0, W1, W2, b0, b1, b2, alphas_, betas_, 
+                    param_shift, param_scale, pca_shift_, pca_scale_,
+                    pca_transform_matrix_, n_layers)
+            logflux.append(pca_emu * spectrum_scale_ + spectrum_shift_)
 
         return np.concatenate(logflux) 
    
@@ -527,29 +517,20 @@ class NMF(Model):
     def _emu_burst_nn(self, tt): 
         ''' burst emulator neural network 
         '''
-        logflux = [] 
+        tt = tt.astype(np.float32)
+
+        logflux = []
         for iwave in range(self._burst_n_emu): # wave bins
-            W_, b_, alphas_, betas_, parameters_shift_, parameters_scale_,\
+            W0, W1, W2, b0, b1, b2, alphas_, betas_, parameters_shift_, parameters_scale_,\
                     pca_shift_, pca_scale_, spectrum_shift_, spectrum_scale_,\
-                    pca_transform_matrix_ = self._burst_emu_params[iwave][:11]
-            n_layers = self._burst_emu_params[iwave][-2]
+                    pca_transform_matrix_ = self._burst_emu_params[iwave]
+            n_layers = self._burst_emu_nlayers[iwave] 
 
-            # forward pass through the network
-            act = []
-            layers = [(tt - parameters_shift_)/parameters_scale_]
-            for i in range(n_layers-1):
-                # linear network operation
-                act.append(np.matmul(layers[-1], W_[i]) + b_[i])
-                
-                # pass through activation function
-                layers.append((betas_[i] + (1.-betas_[i])*1./(1.+np.exp(-alphas_[i]*act[-1])))*act[-1])
-
-            # final (linear) layer -> (normalized) PCA coefficients
-            layers.append(np.matmul(layers[-1], W_[-1]) + b_[-1])
-
-            # rescale PCA coefficients, multiply out PCA basis -> normalized spectrum, shift and re-scale spectrum -> output spectrum
-            logflux.append(np.matmul(layers[-1]*pca_scale_ + pca_shift_,
-                pca_transform_matrix_)*spectrum_scale_ + spectrum_shift_)
+            # PCA coefficients 
+            pca_emu = UT.pcaMLP(tt,  W0, W1, W2, b0, b1, b2, alphas_, betas_, 
+                    parameters_shift_, parameters_scale_, 
+                    pca_shift_, pca_scale_, pca_transform_matrix_, n_layers)
+            logflux.append(pca_emu * spectrum_scale_ + spectrum_shift_)
         return np.concatenate(logflux) 
     
     def _load_emulator(self): 
@@ -562,6 +543,7 @@ class NMF(Model):
         f_nn = lambda npca, i: 'nmf.v0.1.seed0_99.w%s.pca%i.8x256.nbatch250.pkl' % (wbins[i], npca)
         
         self._nmf_n_emu         = len(npcas)
+        self._nmf_emu_nlayers   = [] 
         self._nmf_emu_params    = [] 
         self._nmf_emu_wave      = [] 
 
@@ -569,16 +551,48 @@ class NMF(Model):
             fpkl = open(os.path.join(
                 os.path.dirname(os.path.realpath(__file__)), 'dat', 
                 f_nn(npca, i)), 'rb')
-            params = pickle.load(fpkl)
+            W, b, alphas, betas, parameters_shift, parameters_scale,\
+                    pca_shift, pca_scale, spectrum_shift, spectrum_scale,\
+                    pca_transform_matrix, _, _, waves, _, _, nlayers, _ = pickle.load(fpkl)
+    
+            # convert to float32 for future jit  
+            W0 = W[0].astype(np.float32)
+            W1 = np.array(W[1:-1]).astype(np.float32)
+            W2 = W[-1].astype(np.float32)
 
+            b0 = b[0].astype(np.float32)
+            b1 = np.array(b[1:-1]).astype(np.float32)
+            b2 = b[-1].astype(np.float32)
+
+            alphas = np.array(alphas).astype(np.float32)
+            betas = np.array(betas).astype(np.float32)
+
+            parameters_shift = parameters_shift.astype(np.float32)
+            parameters_scale = parameters_scale.astype(np.float32)
+
+            pca_shift = pca_shift.astype(np.float32)
+            pca_scale = pca_scale.astype(np.float32)
+
+            spectrum_shift = spectrum_shift.astype(np.float32)
+            spectrum_scale = spectrum_scale.astype(np.float32)
+
+            pca_transform_matrix = pca_transform_matrix.astype(np.float32)
+
+            params = [W0, W1, W2, b0, b1, b2, alphas, betas, parameters_shift,
+                parameters_scale, pca_shift, pca_scale, spectrum_shift,
+                spectrum_scale, pca_transform_matrix]
+            
+            self._nmf_emu_nlayers.append(nlayers)
             self._nmf_emu_params.append(params)
-            self._nmf_emu_wave.append(params[13])
-        
+            self._nmf_emu_wave.append(waves)
+    
+        self._nmf_emu_nlayers = np.array(self._nmf_emu_nlayers)
         self._nmf_emu_waves = np.concatenate(self._nmf_emu_wave) 
 
         # load burst emulator
         f_nn = lambda npca, i: 'burst.v0.1.seed0_199.w%s.pca%i.6x512.nbatch250.pkl' % (wbins[i], npca)
         self._burst_n_emu = len(npcas)
+        self._burst_emu_nlayers   = [] 
         self._burst_emu_params    = [] 
         self._burst_emu_wave      = [] 
 
@@ -586,11 +600,42 @@ class NMF(Model):
             fpkl = open(os.path.join(
                 os.path.dirname(os.path.realpath(__file__)), 'dat', 
                 f_nn(npca, i)), 'rb')
-            params = pickle.load(fpkl)
+            W, b, alphas, betas, parameters_shift, parameters_scale,\
+                    pca_shift, pca_scale, spectrum_shift, spectrum_scale,\
+                    pca_transform_matrix, _, _, waves, _, _, nlayers, _ = pickle.load(fpkl)
+            
+            # convert to float32 for future jit  
+            W0 = W[0].astype(np.float32)
+            W1 = np.array(W[1:-1]).astype(np.float32)
+            W2 = W[-1].astype(np.float32)
 
+            b0 = b[0].astype(np.float32)
+            b1 = np.array(b[1:-1]).astype(np.float32)
+            b2 = b[-1].astype(np.float32)
+
+            alphas = np.array(alphas).astype(np.float32)
+            betas = np.array(betas).astype(np.float32)
+
+            parameters_shift = parameters_shift.astype(np.float32)
+            parameters_scale = parameters_scale.astype(np.float32)
+
+            pca_shift = pca_shift.astype(np.float32)
+            pca_scale = pca_scale.astype(np.float32)
+
+            spectrum_shift = spectrum_shift.astype(np.float32)
+            spectrum_scale = spectrum_scale.astype(np.float32)
+
+            pca_transform_matrix = pca_transform_matrix.astype(np.float32)
+
+            params = [W0, W1, W2, b0, b1, b2, alphas, betas, parameters_shift,
+                parameters_scale, pca_shift, pca_scale, spectrum_shift,
+                spectrum_scale, pca_transform_matrix]
+
+            self._burst_emu_nlayers.append(nlayers)
             self._burst_emu_params.append(params)
-            self._burst_emu_wave.append(params[13])
+            self._burst_emu_wave.append(waves)
 
+        self._burst_emu_nlayers = np.array(self._burst_emu_nlayers)
         self._burst_emu_waves = np.concatenate(self._burst_emu_wave) 
         return None 
 
