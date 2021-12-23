@@ -825,7 +825,10 @@ class desiMCMC(MCMC):
 
         if writeout is not None: 
             # append the extra columns to file 
-            mcmc = h5py.File(writeout, 'a') 
+            if overwrite: 
+                mcmc = h5py.File(writeout, 'w') 
+            else: 
+                mcmc = h5py.File(writeout, 'a') 
 
             for k in output.keys(): 
                 if k not in mcmc.keys() and output[k] is not None: 
