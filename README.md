@@ -17,8 +17,8 @@ Bayesian spectral energy distribution (SED) modeling of DESI spectroscopy and ph
   ensemble slice Markov Chain Monte Carlo (MCMC) sample.  
 - a neural network emulator (Kwon *et al.* in prep)  for the SPS model
   that enables accelerated inference. Full posteriors of the 12 SPS parameters 
-  can be derived in ~10 minutes. (The emulator only works for galaxies from 0 <
-  z < 0.5)
+  can be derived in ~10 minutes. The emulator is currently designed for
+  galaxies from 0 < z < 0.6.
 
 For further details on the PROVABGS SED modeling framework, see [Hahn *et al* (2022)](https://arxiv.org/abs/2202.01809)
 
