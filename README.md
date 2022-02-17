@@ -53,6 +53,11 @@ module load PrgEnv-gnu
 
 ```
 
+## Example
+See the [nb/tutorial_desispec.ipynb](https://github.com/changhoonhahn/provabgs/blob/main/nb/tutorial_desispec.ipynb)
+notebook for an example on how to run `provabgs` on DESI spectra. 
+More detailed tutorials coming soon!
+
 ## Team
 - ChangHoon Hahn (Princeton)
 - Rita Tojeiro (St Andrews)
