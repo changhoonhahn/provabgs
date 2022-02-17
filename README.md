@@ -1,8 +1,26 @@
 # PRObabilistic Value-Added Bright Galaxy Survey (PROVABGS)
 [![Gitter](https://badges.gitter.im/provabgs/provabgs.svg)](https://gitter.im/provabgs/provabgs?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
-`provabgs` is a python package for fitting photometry and spectra from the Dark
-Energy Spectroscopic Instrument Bright Galaxy Survey (DESI BGS). 
+The PROVABGS catalog will provide measurements of galaxy properties, such as stellar mass, 
+star formation rate, stellar metallicity, and stellar age for >10 million galaxies of the 
+[DESI](http://desi.lbl.gov/) Bright Galaxy Survey. 
+Full posterior distributions of the galaxy properties will be inferred using state-of-the-art
+Bayesian spectral energy distribution (SED) modeling of DESI spectroscopy and photometry.
+`provabgs` provides the full SED modeling pipeline. 
+
+`provabgs` includes: 
+- a state-of-the-art stellar population synthesis (SPS) model based on
+  non-parametric prescription for star formation history, a metallicity 
+  history that varies over the age of the galaxy, and a flexible dust 
+  prescription. 
+- a Bayesian inference pipeline based on the [zeus](https://github.com/minaskar/zeus)
+  ensemble slice Markov Chain Monte Carlo (MCMC) sample.  
+- a neural network emulator (Kwon *et al.* in prep)  for the SPS model
+  that enables accelerated inference. Full posteriors of the 12 SPS parameters 
+  can be derived in ~10 minutes. (The emulator only works for galaxies from 0 <
+  z < 0.5)
+
+For further details on the PROVABGS SED modeling framework, see [Hahn *et al* (2022)](https://arxiv.org/abs/2202.01809)
 
 ## Installation
 To install the package, clone the github repo and use `pip` to install  
@@ -16,11 +34,10 @@ cd provabgs
 pip install -e . 
 ```
 
-`pip` install coming soon...
-
 ### requirements
-If you only use the emulators, `provabgs` can run without `fsps`. However, it's
-recommended that you install `python-fsps`. See `python-fsps`
+If you only plan to use `provabgs` with the neural emulators, then `provabgs` 
+does not require `fsps`. However, if you want to use the original SPS model, 
+you will need to install `python-fsps`.  See `python-fsps`
 [documentation](https://python-fsps.readthedocs.io/en/latest/) for installation
 instruction. 
 
