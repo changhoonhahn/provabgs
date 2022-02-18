@@ -33,6 +33,12 @@ m_nmf = Models.NMF(burst=True, emulator=True)
 m_fluxcalib = FluxCalib.constant_flux_factor
 
 def run_mcmc(igal): 
+    fmcmc = os.path.join('/global/cscratch1/sd/chahah/provabgs/svda/', 
+            '%i.petal%i.%s.%s.%i.hdf5' % (tileid, ipetal, survey, target, igal))
+    if os.path.isfile(fmcmc): 
+        # don't overwrite 
+        return None 
+
     # get observations 
     # set prior
     prior = Infer.load_priors([
@@ -45,21 +51,22 @@ def run_mcmc(igal):
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust1
         Infer.UniformPrior(0., 3., label='sed'),        # uniform priors on dust2
         Infer.UniformPrior(-2., 1., label='sed'),    # uniform priors on dust_index
-        Infer.GaussianPrior(f_fiber, sigma_f_fiber**2, label='flux_calib') # flux calibration
+        Infer.GaussianPrior(f_fiber[igal], sigma_f_fiber[igal]**2, label='flux_calib') # flux calibration
     ])
 
     desi_mcmc = Infer.desiMCMC(model=m_nmf, prior=prior, flux_calib=m_fluxcalib)
+    
+    photo_flux_i = np.array(list(photo_flux[igal]))
+    photo_ivar_i = np.array(list(photo_ivar[igal]))
 
-    fmcmc = os.path.join('/global/cscratch1/sd/chahah/provabgs/svda/'
-            sample.replace('.fits', '.%i.hdf5' % igal))
     # run MCMC
     zeus_chain = desi_mcmc.run(
         wave_obs=w_obs,
-        flux_obs=f_obs[igal],
-        flux_ivar_obs=i_obs[igal],
+        flux_obs=f_obs[igal,:],
+        flux_ivar_obs=i_obs[igal,:],
         bands='desi', # g, r, z
-        photo_obs=photo_flux[igal],
-        photo_ivar_obs=photo_ivar[igal],
+        photo_obs=photo_flux_i, 
+        photo_ivar_obs=photo_ivar_i, 
         zred=zred[igal],
         vdisp=0.,
         sampler='zeus',
@@ -67,7 +74,7 @@ def run_mcmc(igal):
         burnin=0,
         opt_maxiter=2000,
         niter=niter,
-        progress=True,
+        progress=False,
         debug=True,
         writeout=fmcmc,
         overwrite=True)

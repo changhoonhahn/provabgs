@@ -16,7 +16,7 @@ def time_petal(tileid, petal, target, survey, n_cpu):
     meta, _, _, _, _, _, _, _, _ = SVDA.cumulative_tile_petal(
             tileid, ipetal, target=target, redux='fuji', survey=survey)
     ngal = len(meta)
-    return int(np.ceil(0.33 * np.ceil(float(ngal) / float(n_cpu))) )
+    return int(np.ceil(np.ceil(float(ngal) / float(n_cpu))) )
 
 
 def check_file(tileid, i_petal): 
@@ -77,6 +77,6 @@ is_bright = (tiles_fuji['PROGRAM'] == 'bright')
 is_sv3 = (tiles_fuji['SURVEY'] == 'sv3')
 tileid = tiles_fuji['TILEID'][is_bright & is_sv3][np.argmax(tiles_fuji[is_bright & is_sv3]['EFFTIME_SPEC'])]
 
-for ipetal in range(1): 
+for ipetal in range(10): 
     if check_file(tileid, ipetal): 
          deploy_petal(tileid, ipetal, 'BGS_BRIGHT', 'sv3', n_cpu=32, niter=3000)
