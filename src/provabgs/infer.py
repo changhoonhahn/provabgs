@@ -1212,3 +1212,319 @@ class GaussianPrior(Prior):
 
     def sample(self): 
         return np.atleast_1d(self.multinorm.rvs())
+
+
+class PostOut(object): 
+    ''' posterior output object
+    '''
+    def __init__(self): 
+        self._samples   = None # mcmc samples 
+        self._log_prob  = None # log probabilities 
+        self._theta_bf  = None # best-fit theta 
+    
+        self._redshift  = None # observed redshift
+        self._w_obs     = None # wavelength of observed spectra 
+        self._flux_spec_obs     = None # flux of observed spectra 
+        self._ivar_spec_obs     = None # inverse variance of observed spectra 
+        self._flux_photo_obs    = None # flux of observed photometry 
+        self._ivar_photo_obs    = None # inverse variance of observed photometry 
+
+        self._flux_spec_model   = None # flux of model spectra 
+        self._ivar_spec_model   = None # inverse variance of model spectra 
+        self._flux_photo_model  = None # flux of model photometry 
+        self._ivar_photo_model  = None # inverse variance of model photometry 
+
+    def read(self, fname): 
+        ''' read posterior from file 
+        '''
+        mcmc = h5py.File(fname, 'r')  # write 
+        
+        if 'samples' in mcmc.keys(): 
+            self.samples    = mcmc['samples'][...]
+        elif 'mcmc_chain' in mcmc.keys(): 
+            self.samples    = mcmc['mcmc_chain'][...]
+        else: 
+            raise ValueError
+        self.log_prob   = mcmc['log_prob'][...]
+        
+        if 'redshift' in mcmc.keys(): 
+            self.redshift = mcmc['redshift'][...]
+        if 'wavelength_obs' in mcmc.keys(): 
+            self.wavelength_obs = mcmc['wavelength_obs'][...]
+        if 'flux_spec_obs' in mcmc.keys(): 
+            self.flux_spec_obs = mcmc['flux_spec_obs'][...]
+        if 'ivar_spec_obs' in mcmc.keys(): 
+            self.ivar_spec_obs = mcmc['ivar_spec_obs'][...]
+        if 'flux_photo_obs' in mcmc.keys(): 
+            self.flux_photo_obs = mcmc['flux_photo_obs'][...]
+        if 'ivar_photo_obs' in mcmc.keys(): 
+            self.ivar_photo_obs = mcmc['ivar_photo_obs'][...]
+    
+        # to be backwards compatible. 
+        if 'flux_ivar_spec_obs' in mcmc.keys(): 
+            self.ivar_spec_obs = mcmc['flux_ivar_spec_obs'][...]
+        if 'flux_ivar_photo_obs' in mcmc.keys(): 
+            self.ivar_photo_obs = mcmc['flux_ivar_photo_obs'][...]
+
+
+        if 'flux_spec_model' in mcmc.keys(): 
+            self.flux_spec_model = mcmc['flux_spec_model'][...]
+        if 'flux_photo_model' in mcmc.keys(): 
+            self.flux_photo_model = mcmc['flux_photo_model'][...]
+
+        mcmc.close() 
+        return None 
+    
+    def write(self, fname, overwrite=True): 
+        ''' write posterior to given file. 
+    
+        Parameters
+        ----------
+        fname : str
+            hdf5 file name to write the posterior to
+
+        overwrite : bool
+            If True, overwrite file. If False, return error 
+        '''
+        if os.path.isfile(fname) and not overwrite: 
+            raise ValueError
+
+        mcmc = h5py.File(fname, 'w')  # write 
+    
+        assert self.samples is not None
+        assert self.log_prob is not None 
+
+        mcmc.create_dataset('samples', self.samples)
+        mcmc.create_dataset('log_prob', self.log_prob)
+
+        mcmc.create_dataset('theta_bestfit', self.theta_bestfit)
+        
+        # if observations are provided
+        if self.redshift is not None:
+            mcmc.create_dataset('redshift', self.redshift) 
+        if self.wavelength_obs is not None:
+            mcmc.create_dataset('wavelength_obs', self.wavelength_obs)
+        if self.flux_spec_obs is not None:
+            mcmc.create_dataset('flux_spec_obs', self.flux_spec_obs)
+        if self.ivar_spec_obs is not None:
+            mcmc.create_dataset('ivar_spec_obs', self.ivar_spec_obs)
+        if self.flux_photo_obs is not None:
+            mcmc.create_dataset('flux_photo_obs', self.flux_photo_obs)
+        if self.ivar_photo_obs is not None:
+            mcmc.create_dataset('ivar_photo_obs', self.ivar_photo_obs)
+
+        # if best-fit model are provided
+        if self.flux_spec_model is not None: 
+            mcmc.create_dataset('flux_spec_model', self.flux_spec_model)
+        if self.flux_photo_model is not None: 
+            mcmc.create_dataset('flux_photo_model', self.flux_photo_model)
+        mcmc.close() 
+        return None 
+
+    def validate(self, nburnin=500, labels=None, plot_range=None): 
+        ''' validation plot of the posterior
+        '''
+        import matplotlib.pyplot as plt
+        import corner as DFM
+        
+        flat_chain = self.flatten_chain(self.samples[nburnin:,:,:])
+        ndim = flat_chain.shape[-1]
+
+        if labels is None: 
+            # default labels for fititng spectrophotometry
+            lbls_default = [r'$\log M_*$', 
+                    r'$\beta^{\rm SFH}_1$', r'$\beta^{\rm SFH}_2$', 
+                    r'$\beta^{\rm SFH}_3$', r'$\beta^{\rm SFH}_4$',
+                    r'$f_{\rm burst}$', r'$t_{\rm burst}$', 
+                    r'$\gamma_1^{\rm ZH}$', r'$\gamma_2^{\rm ZH}$',
+                    r'$\tau_{\rm BC}$', r'$\tau_{\rm ISM}$', r'$n_{\rm dust}$', 
+                    r'$f_{\rm fiber}$']
+            if len(lbls_default) == ndim:
+                labels = lbls_default 
+
+        if plot_range is None: 
+            # default range for fititng spectrophotometry
+            range_default = [(7, 12.5), 
+                    (0., 1.), (0., 1.), (0., 1.), (0., 1.), 
+                    (0., 1.), (1e-2, 13.27), 
+                    (4.5e-5, 1.5e-2), (4.5e-5, 1.5e-2), 
+                    (0., 3.), (0., 3.), (-2., 1.), 
+                    (0., 1.)]
+            if len(range_default) == ndim: 
+                plot_range = range_default 
+
+        fig = plt.figure(figsize=(15, 20))
+        gs0 = fig.add_gridspec(nrows=ndim, ncols=ndim, top=0.95, bottom=0.275)
+        for yi in range(ndim):
+            for xi in range(ndim):
+                sub = fig.add_subplot(gs0[yi, xi])
+
+        _fig = DFM.corner(
+                flat_chain[::10,:],
+                quantiles=None,
+                levels=[0.68, 0.95],
+                bins=20,
+                smooth=True,
+                labels=labels,
+                label_kwargs={'fontsize': 20, 'labelpad': 0.1},
+                range=plot_range,
+                fig=fig)
+
+        axes = np.array(fig.axes).reshape((ndim, ndim))
+        for yi in range(1, ndim):
+            ax = axes[yi, 0]
+            ax.set_ylabel(labels[yi], fontsize=20, labelpad=30)
+            ax.yaxis.set_label_coords(-0.6, 0.5)
+        for xi in range(ndim):
+            ax = axes[-1, xi]
+            ax.set_xlabel(labels[xi], fontsize=20, labelpad=30)
+            ax.xaxis.set_label_coords(0.5, -0.55)
+
+            ax = axes[xi, xi]
+            ax.set_xlim(plot_range[xi])
+
+        gs1 = fig.add_gridspec(nrows=1, ncols=30, top=0.2, bottom=0.05)
+        sub = fig.add_subplot(gs1[0, :7])
+        
+        if self.flux_photo_obs is not None: 
+            mags_obs = 22.5 - 2.5 * np.log10(self.flux_photo_obs)
+            mags_sig_obs = np.abs(-2.5 *
+                    (self.ivar_photo_obs**-0.5)/self.flux_photo_obs/np.log(10))
+            sub.errorbar([4720., 6415., 9260.], mags_obs,
+                    yerr=mags_sig_obs, fmt='.k')
+        if self.flux_photo_model is not None: 
+            mags_model = 22.5 - 2.5 * np.log10(self.flux_photo_model)
+            sub.scatter([4720., 6415., 9260.], mags_model, marker='s',
+                    facecolor='none', s=70, c='C1')
+        sub.set_xlim(4000, 1e4)
+        sub.set_xticks([4720., 6415., 9260])
+        sub.set_xticklabels(['g', 'r', 'z'], fontsize=25)
+        sub.set_ylabel('magnitude', fontsize=25)
+
+        sub = fig.add_subplot(gs1[0, 10:])
+        if self.wavelength_obs is not None and self.flux_spec_obs is not None: 
+            sub.plot(self.wavelength_obs, self.flux_spec_obs, c='k', lw=0.5,
+                    label='Obs.')
+        if self.wavelength_obs is not None and self.flux_spec_model is not None: 
+            sub.plot(self.wavelength_obs, self.flux_spec_model, c='C1', lw=1,
+                    label='best-fit model')
+        sub.legend(loc='upper right', fontsize=20, handletextpad=0.2)
+        sub.set_xlabel('wavelength [$A$]', fontsize=25)
+        sub.set_xlim(3.6e3, 9.8e3)
+        sub.set_ylim(0., 20)
+        sub.set_ylabel('flux [$erg/s/cm^2/A$]', fontsize=20)
+        return fig 
+
+    def flatten_chain(self, chain): 
+        ''' flatten mcmc . If chain object is 2D then it assumes it's
+        already flattened. 
+        '''
+        if len(chain.shape) == 2: return chain # already flat 
+
+        self._n_iter    = chain.shape[0]
+        self._n_walker  = chain.shape[1]
+        self._n_param   = chain.shape[2]
+
+        s = list(chain.shape[1:])
+        s[0] = np.prod(chain.shape[:2]) 
+        return chain.reshape(s)
+
+    @property
+    def samples(self) : 
+        return self._samples 
+
+    @samples.setter
+    def samples(self, samples): 
+        self._samples = samples
+
+    @property
+    def log_prob(self) : 
+        return self._log_prob
+
+    @log_prob.setter
+    def log_prob(self, log_prob): 
+        self._log_prob = log_prob
+
+    @property
+    def theta_bestfit(self): 
+        assert self._log_prob is not None
+        assert self._samples is not None
+        
+        flat_chain = self.flatten_chain(self.samples) 
+        flat_log_prob = self.log_prob.reshape(np.prod(self.log_prob.shape))
+
+        i_max = flat_log_prob.argmax() 
+        self._theta_bf = flat_chain[i_max,:]
+        return self._theta_bf
+
+    @property 
+    def redshift(self): 
+        return self._redshift
+
+    @redshift.setter 
+    def redshift(self, zred): 
+        self._redshift = zred
+        return self._redshift
+
+    @property 
+    def wavelength_obs(self): 
+        return self._w_obs 
+
+    @wavelength_obs.setter 
+    def wavelength_obs(self, wave): 
+        self._w_obs = wave
+        return self._w_obs 
+    
+    @property 
+    def flux_spec_obs(self): 
+        return self._flux_spec_obs
+
+    @flux_spec_obs.setter
+    def flux_spec_obs(self, flux): 
+        self._flux_spec_obs = flux 
+        return self._flux_spec_obs
+
+    @property 
+    def ivar_spec_obs(self): 
+        return self._ivar_spec_obs
+
+    @ivar_spec_obs.setter
+    def ivar_spec_obs(self, ivar): 
+        self._ivar_spec_obs = ivar
+        return self._ivar_spec_obs
+    
+    @property 
+    def flux_photo_obs(self): 
+        return self._flux_photo_obs
+
+    @flux_photo_obs.setter
+    def flux_photo_obs(self, flux): 
+        self._flux_photo_obs = flux 
+        return self._flux_photo_obs
+
+    @property 
+    def ivar_photo_obs(self): 
+        return self._ivar_photo_obs
+
+    @ivar_photo_obs.setter
+    def ivar_photo_obs(self, ivar): 
+        self._ivar_photo_obs = ivar
+        return self._ivar_photo_obs
+
+    @property 
+    def flux_spec_model(self): 
+        return self._flux_spec_model
+
+    @flux_spec_model.setter
+    def flux_spec_model(self, flux): 
+        self._flux_spec_model = flux 
+        return self._flux_spec_model
+    
+    @property 
+    def flux_photo_model(self): 
+        return self._flux_photo_model
+
+    @flux_photo_model.setter
+    def flux_photo_model(self, flux): 
+        self._flux_photo_model = flux 
+        return self._flux_photo_model
