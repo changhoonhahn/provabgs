@@ -1294,30 +1294,30 @@ class PostOut(object):
         assert self.samples is not None
         assert self.log_prob is not None 
 
-        mcmc.create_dataset('samples', self.samples)
-        mcmc.create_dataset('log_prob', self.log_prob)
+        mcmc.create_dataset('samples', data=self.samples)
+        mcmc.create_dataset('log_prob', data=self.log_prob)
 
-        mcmc.create_dataset('theta_bestfit', self.theta_bestfit)
+        mcmc.create_dataset('theta_bestfit', data=self.theta_bestfit)
         
         # if observations are provided
         if self.redshift is not None:
-            mcmc.create_dataset('redshift', self.redshift) 
+            mcmc.create_dataset('redshift', data=self.redshift) 
         if self.wavelength_obs is not None:
-            mcmc.create_dataset('wavelength_obs', self.wavelength_obs)
+            mcmc.create_dataset('wavelength_obs', data=self.wavelength_obs)
         if self.flux_spec_obs is not None:
-            mcmc.create_dataset('flux_spec_obs', self.flux_spec_obs)
+            mcmc.create_dataset('flux_spec_obs', data=self.flux_spec_obs)
         if self.ivar_spec_obs is not None:
-            mcmc.create_dataset('ivar_spec_obs', self.ivar_spec_obs)
+            mcmc.create_dataset('ivar_spec_obs', data=self.ivar_spec_obs)
         if self.flux_photo_obs is not None:
-            mcmc.create_dataset('flux_photo_obs', self.flux_photo_obs)
+            mcmc.create_dataset('flux_photo_obs', data=self.flux_photo_obs)
         if self.ivar_photo_obs is not None:
-            mcmc.create_dataset('ivar_photo_obs', self.ivar_photo_obs)
+            mcmc.create_dataset('ivar_photo_obs', data=self.ivar_photo_obs)
 
         # if best-fit model are provided
         if self.flux_spec_model is not None: 
-            mcmc.create_dataset('flux_spec_model', self.flux_spec_model)
+            mcmc.create_dataset('flux_spec_model', data=self.flux_spec_model)
         if self.flux_photo_model is not None: 
-            mcmc.create_dataset('flux_photo_model', self.flux_photo_model)
+            mcmc.create_dataset('flux_photo_model', data=self.flux_photo_model)
         mcmc.close() 
         return None 
 
@@ -1528,3 +1528,8 @@ class PostOut(object):
     def flux_photo_model(self, flux): 
         self._flux_photo_model = flux 
         return self._flux_photo_model
+
+    def properties(self):
+        class_items = self.__class__.__dict__.iteritems()
+        return dict((k, getattr(self, k)) for k, v in class_items if
+                isinstance(v, property))

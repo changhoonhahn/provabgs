@@ -12,19 +12,17 @@ from provabgs import models as Models
 from provabgs import flux_calib as FluxCalib
 
 
-tileid = int(sys.argv[1])
-ipetal = int(sys.argv[2])
-target = sys.argv[3]
-survey = sys.argv[4]
-niter = int(sys.argv[5])
-n_cpu = int(sys.argv[6])
+hpix    = int(sys.argv[1])
+target  = sys.argv[2]
+survey  = sys.argv[3]
+niter = int(sys.argv[4])
+n_cpu = int(sys.argv[5])
 
-# read BGS targets from specified petal  
+# read BGS targets from specified healpix
 meta, zred, photo_flux, photo_ivar, w_obs, f_obs, i_obs, f_fiber, sigma_f_fiber\
-        = SVDA.cumulative_tile_petal(tileid, ipetal, target=target,
-                redux='fuji', survey=survey)
+        = SVDA.healpix(hpix, target=target, redux='fuji', survey=survey)
 ngals = len(meta)
-print('%i %s targets in TILEID=%i PETAL=%i' % (ngals, target, tileid, ipetal))
+print('%i %s targets in HEALPIX=%i' % (ngals, target, hpix))
 
 # declare SPS model
 m_nmf = Models.NMF(burst=True, emulator=True)
@@ -33,8 +31,8 @@ m_nmf = Models.NMF(burst=True, emulator=True)
 m_fluxcalib = FluxCalib.constant_flux_factor
 
 def run_mcmc(igal): 
-    fmcmc = os.path.join('/global/cscratch1/sd/chahah/provabgs/svda/', 
-            str(tileid), 'provabgs.%i.hdf5' % meta['TARGETID'][igal])
+    fmcmc = os.path.join('/global/cscratch1/sd/chahah/provabgs/svda/healpix/', 
+            str(hpix), 'provabgs.%i.hdf5' % meta['TARGETID'][igal])
     if os.path.isfile(fmcmc): 
         # don't overwrite 
         return None 
