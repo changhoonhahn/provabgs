@@ -38,10 +38,13 @@ Coming soon!
 Team
 ----
 
-- ChangHoon Hahn (Princeton)
+- |chang|_ (Princeton)
 - Rita Tojeiro (St Andrews)
 - Justin Alsing (Stockholm) 
 - James Kyubin Kwon (Berkeley) 
+
+.. _chang: https://changhoonhahn.github.io/
+.. |chang| replace:: ChangHoon Hahn
 
 .. _desi: http://desi.lbl.gov/
 .. |desi| replace:: DESI 
