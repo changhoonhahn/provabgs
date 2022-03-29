@@ -1,6 +1,6 @@
 # PRObabilistic Value-Added Bright Galaxy Survey (PROVABGS)
 [![Gitter](https://badges.gitter.im/provabgs/provabgs.svg)](https://gitter.im/provabgs/provabgs?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
-[![arXiv](https://img.shields.io/badge/arXiv-2202.01809-B31B1B.svg)](https://arxiv.org/abs/2202.01809)
+[![arXiv](https://img.shields.io/badge/arXiv-2202.01809-b31b1b.svg)](https://arxiv.org/abs/2202.01809)
 
 The PROVABGS catalog will provide measurements of galaxy properties, such as stellar mass, 
 star formation rate, stellar metallicity, and stellar age for >10 million galaxies of the 
