@@ -14,15 +14,15 @@ The `provabgs` Python package provides
   non-parametric prescription for star formation history, a metallicity 
   history that varies over the age of the galaxy, and a flexible dust 
   prescription. 
-- a neural network emulator (Kwon *et al.* in prep)  for the SPS model
-  that enables accelerated inference. Full posteriors of the 12 SPS parameters 
-  can be derived in ~10 minutes. The emulator is currently designed for
-  galaxies from 0 < z < 0.6.
+- a neural network emulator (Kwon *et al.* in prep) for the SPS model
+  that is >100x faster than the original SPS model and enables accelerated 
+  inference. Full posteriors of the 12 SPS parameters can be derived in 
+  ~10 minutes. The emulator is currently designed for galaxies from 0 < z < 0.6.
 - a Bayesian inference pipeline based on the [zeus](https://github.com/minaskar/zeus)
   ensemble slice Markov Chain Monte Carlo (MCMC) sample.  
 
-Further documentation can be found at https://changhoonhahn.github.io/provabgs.
-For more details on the PROVABGS SED modeling framework, see [Hahn *et al* (2022)](https://arxiv.org/abs/2202.01809)
+For additional details see [documentation](https://changhoonhahn.github.io/provabgs) 
+and [Hahn *et al* (2022)](https://arxiv.org/abs/2202.01809)
 
 ## Installation
 To install the package, clone the github repo and use `pip` to install  
@@ -56,9 +56,14 @@ module load PrgEnv-gnu
 ```
 
 ## Example
-See the [nb/tutorial_desispec.ipynb](https://github.com/changhoonhahn/provabgs/blob/main/nb/tutorial_desispec.ipynb)
-notebook for an example on how to run `provabgs` on DESI spectra. 
-More detailed tutorials coming soon!
+Checkout the [nb/example.ipybn](https://github.com/changhoonhahn/provabgs/blob/main/nb/example.ipynb) 
+notebook for an example on conducting Bayesian SED modeling on galaxy 
+spectra using `provabgs`. It requires less than 10 lines of code and 
+about 10 minutes!
+
+If you're interested in conducting Bayesian SED modeling on DESI spectra in
+particular, check out the [nb/tutorial_desispec.ipynb](https://github.com/changhoonhahn/provabgs/blob/main/nb/tutorial_desispec.ipynb)
+notebook. 
 
 ## Team
 - [ChangHoon Hahn](https://changhoonhahn.github.io) (Princeton)
