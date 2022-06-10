@@ -32,18 +32,6 @@ class MCMC(object):
         if not np.isfinite(lp): 
             return -np.inf
 
-        if self.corrprior is not None: 
-            # transform theta 
-            ttheta = self.prior.transform(theta)
-            # get derived properties
-            fttheta = self.corrprior._get_properties(ttheta)
-            
-            # p'(theta)  = q(theta)/p(f(theta)|q)
-            lpf = self.corrprior.p_ftheta.log_pdf(fttheta)
-            if not np.isfinite(lpf): 
-                return -np.inf
-            lp -= lpf 
-
         if debug: print('  log Prior = %f' % lp) 
         return lp 
 
