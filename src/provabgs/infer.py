@@ -14,7 +14,7 @@ import scipy.optimize as op
 from speclite import filters as specFilter
 
 
-class MCMC(object): 
+class _MCMC(object): 
     ''' base class object for MCMC inference 
 
     Parameters
@@ -452,11 +452,11 @@ class MCMC(object):
         return chain.reshape(s)
 
 
-class desiMCMC(MCMC): 
+class desiMCMC(_MCMC): 
     ''' MCMC inference object specifically designed for analyzing DESI
     spectroscopic and photometric data.
     '''
-    def __init__(self, model=None, flux_calib=None, prior=None, corrprior=None): 
+    def __init__(self, model=None, flux_calib=None, prior=None): 
         if model is None: # default Model class object 
             from .models import NMF
             self.model = NMF(burst=False, emulator=True)
@@ -472,7 +472,8 @@ class desiMCMC(MCMC):
         self.prior = prior 
         assert 'sed' in self.prior.labels, 'please label which priors are for the SED'
 
-        self.corrprior = corrprior
+        self._filters = None
+
     
     def run(self, wave_obs=None, flux_obs=None, flux_ivar_obs=None,
             resolution=None, photo_obs=None, photo_ivar_obs=None, zred=None,
@@ -679,7 +680,10 @@ class desiMCMC(MCMC):
         _mask = self._check_mask(mask, wave_obs, flux_ivar_obs, zred) 
         
         # get photometric bands  
-        filters = self._get_bands(bands)
+        if self._filters is None: 
+            filters = self._get_bands(bands)
+        else: 
+            filters = self._filters
 
         # posterior function args and kwargs
         lnpost_args = (
@@ -873,6 +877,70 @@ class nsaMCMC(desiMCMC):
             raise NotImplementedError("specified bands not implemented") 
 
         return specFilter.FilterSequence(filters)
+
+
+class specphotoMCMC(desiMCMC): 
+    ''' MCMC inference object for analyzing galaxy spectra 
+    '''
+    def __init__(self, model=None, flux_calib=None, prior=None): 
+        if model is None: # default Model class object 
+            from .models import NMF
+            self.model = NMF(burst=False, emulator=True)
+        else: 
+            self.model = model
+
+        if flux_calib is None: # default FluxCalib function  
+            from .flux_calib import no_flux_factor 
+            self.flux_calib = no_flux_factor
+        else: 
+            self.flux_calib = flux_calib
+
+        self.prior = prior 
+        assert 'sed' in self.prior.labels, 'please label which priors are for the SED'
+
+        self.corrprior = None 
+        self._filters = None 
+   
+    @property
+    def photometric_filters(self): 
+        return self._filters
+
+    @photometric_filters.setter
+    def photometric_filters(self, filters): 
+        ''' specify the photometric bandpass filters to use for photometry 
+
+        filters : object 
+            `speclite.FilterResponse` that correspond to the specified `bands.
+        '''
+        self._filters = filters
+        return self._filters 
+
+    def _get_bands(self, bands): 
+        ''' For specific `bands`, get the corresponding photometric bandpass
+        filters. 
+
+        
+        Returns
+        -------
+        filters : object 
+            `speclite.FilterResponse` that correspond to the specified `bands.
+        '''
+        if bands is None: 
+            return None
+
+        if isinstance(bands, str): 
+            if bands == 'desi': 
+                bands_list = ['decam2014-g', 'decam2014-r', 'decam2014-z']
+                #, 'wise2010-W1', 'wise2010-W2']#, 'wise2010-W3', 'wise2010-W4']
+            else: 
+                raise NotImplementedError("specified bands not implemented") 
+        elif isinstance(bands, list): 
+            bands_list = bands
+        else: 
+            raise NotImplementedError("specified bands not implemented") 
+
+        return specFilter.load_filters(*tuple(bands_list))
+
 
 
 # --- priors --- 
