@@ -48,10 +48,11 @@ class Model(object):
         self._d_lum_z_interp = \
                 Interp.InterpolatedUnivariateSpline(_z, _d_lum_cm, k=3)
         print('input parameters : %s' % ', '.join(self._parameters))
-    
-    def sed(self, tt, zred, vdisp=0., wavelength=None, resolution=None, filters=None):
-        ''' compute the redshifted spectral energy distribution (SED) for a
-        given set of parameter values and redshift.
+
+    def seds(self, tt, zred, vdisp=0., wavelength=None, resolution=None,
+            filters=None):
+        ''' compute the redshifted spectral energy distributions (SED) for a
+        set of parameter values and redshift.
        
 
         Parameters
@@ -96,7 +97,6 @@ class Model(object):
        
         outwave, outspec, maggies = [], [], [] 
         for _tt, _zred in zip(tt, zred): 
-            #_tage = self.cosmo.age(_zred).value 
             _tage = self._tage_z_interp(_zred)
 
             # get SSP luminosity
@@ -155,6 +155,108 @@ class Model(object):
             outwave = np.array(outwave)
             outspec = np.array(outspec) 
             if filters is not None: maggies = np.array(maggies)
+
+        if filters is None: 
+            return outwave, outspec
+        else: 
+            return outwave, outspec, maggies
+    
+    def sed(self, tt, zred, vdisp=0., wavelength=None, resolution=None,
+            filters=None, tage=None, d_lum=None):
+        ''' compute the redshifted spectral energy distribution (SED) for a
+        signle set of parameter values and redshift.
+       
+
+        Parameters
+        ----------
+        tt : 1-d array
+            [Nparam] SPS parameters     
+
+        zred : float 
+            redshift of the SED 
+
+        vdisp : float
+            velocity dispersion  
+
+        wavelength : array_like[Nwave,]
+            If you want to use your own wavelength. If specified, the model
+            will interpolate the spectra to the specified wavelengths. By
+            default, it will use the speculator wavelength
+            (Default: None)  
+
+        resolution : array_like[N,Nwave]
+            resolution matrix (e.g. DESI data provides a resolution matrix)  
+    
+        filters : object
+            Photometric bandpass filter to generate photometry.
+            `speclite.FilterResponse` object. 
+
+        tage : float 
+            Age of galaxy in Gyr. If None, age is determined from redshift.
+            (Default: None) 
+
+        d_lum : float 
+            Luminosity distance in cm. If None, d_lum is determined from
+            redshift. 
+            (Default: None) 
+
+        Returns
+        -------
+        outwave : [Nsample, Nwave]
+            output wavelengths in angstrom. 
+
+        outspec : [Nsample, Nwave]
+            the redshifted SED in units of 1e-17 * erg/s/cm^2/Angstrom.
+        '''
+        if tage is None: tage = self._tage_z_interp(zred)
+
+        # get SSP luminosity
+        wave_rest, lum_ssp = self._sps_model(tt, tage)
+
+        # redshift the spectra
+        w_z = wave_rest * (1. + zred)
+        if d_lum is None: d_lum = self._d_lum_z_interp(zred) 
+        #flux_z = lum_ssp * UT.Lsun() / (4. * np.pi * d_lum**2) / (1. + _zred) * 1e17 # 10^-17 ergs/s/cm^2/Ang
+        flux_z = lum_ssp * 3.846e50 / (4. * np.pi * d_lum**2) / (1. + zred) # 10^-17 ergs/s/cm^2/Ang
+
+        # apply velocity dispersion 
+        if vdisp == 0: 
+            wave_smooth = w_z 
+            flux_smooth = flux_z
+        else: 
+            wave_smooth, flux_smooth = self._apply_vdisp(w_z, flux_z, vdisp)
+
+        if wavelength is None: 
+            outwave = wave_smooth
+            outspec = flux_smooth
+        else: 
+            outwave = wavelength
+            
+            # resample flux to input wavelength  
+            if np.all(np.diff(wavelength) >=0): 
+                resampflux = UT.trapz_rebin(wave_smooth, flux_smooth, xnew=wavelength) 
+            else: 
+                isort = np.argsort(wavelength)
+                resampflux = np.zeros(len(wavelength))
+                resampflux[isort] = UT.trapz_rebin(wave_smooth, flux_smooth,
+                        xnew=wavelength[isort]) 
+
+            if resolution is not None: 
+                # apply resolution matrix 
+                _i = 0 
+                for res in np.atleast_1d(resolution):
+                    _res = UT.Resolution(res) 
+                    resampflux[_i:_i+res.shape[-1]] = _res.dot(resampflux[_i:_i+res.shape[-1]]) 
+                    _i += res.shape[-1]
+            outspec = resampflux
+
+        if filters is not None: 
+            # calculate photometry from SEDs 
+            flux_z, w_z = filters.pad_spectrum(np.atleast_2d(flux_z) *
+                    1e-17*U.erg/U.s/U.cm**2/U.Angstrom,
+                    w_z * U.Angstrom)
+            _maggies = filters.get_ab_maggies(flux_z, wavelength=w_z)
+            maggies = np.array(list(_maggies[0])) * 1e9
 
         if filters is None: 
             return outwave, outspec

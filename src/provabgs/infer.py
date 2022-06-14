@@ -477,8 +477,8 @@ class desiMCMC(_MCMC):
     
     def run(self, wave_obs=None, flux_obs=None, flux_ivar_obs=None,
             resolution=None, photo_obs=None, photo_ivar_obs=None, zred=None,
-            vdisp=150., mask=None, bands=None, sampler='emcee',
-            nwalkers=100, niter=1000, burnin=100, maxiter=200000,
+            vdisp=150., tage=None, d_lum=None, mask=None, bands=None, 
+            sampler='emcee', nwalkers=100, niter=1000, burnin=100, maxiter=200000,
             opt_maxiter=100, theta_start=None, writeout=None, overwrite=False, debug=False,
             progress=True, pool=None, **kwargs): 
         ''' run MCMC using `emcee` to infer the posterior distribution of the
@@ -512,6 +512,19 @@ class desiMCMC(_MCMC):
         vdisp : float
             velocity disperion in km/s. 
             (Default: 150.) 
+
+        tage : float
+            Age of galaxy in Gyr. This was implemented in case the age of the galaxy
+            is different than the redshift. This matters for local objects such
+            as M31 where peculiar velocity has a significant effect. If None,
+            age is derived from the redshift. 
+            (Default: None)
+
+        d_lum : float 
+            luminosity distance in cm. This was implemented to deal with local 
+            objects such as M31 where peculiar velocity has a significant
+            effect. If None, d_lum is derived from the redshift. 
+            (Default: None) 
     
         mask : string or array_like[Nwave,]
             boolean array specifying where to mask the spectra. There are a few
@@ -574,7 +587,7 @@ class desiMCMC(_MCMC):
                 wave_obs=wave_obs, flux_obs=flux_obs,
                 flux_ivar_obs=flux_ivar_obs, resolution=resolution, 
                 photo_obs=photo_obs, photo_ivar_obs=photo_ivar_obs, zred=zred,
-                vdisp=vdisp, mask=mask, bands=bands)
+                vdisp=vdisp, mask=mask, bands=bands, tage=tage, d_lum=d_lum)
 
         self._lnpost_args = lnpost_args
         self._lnpost_kwargs = lnpost_kwargs
@@ -607,8 +620,9 @@ class desiMCMC(_MCMC):
         return None 
 
     def lnLike(self, tt, wave_obs, flux_obs, flux_ivar_obs, photo_obs,
-            photo_ivar_obs, zred, vdisp, resolution=None, mask=None,
-            filters=None, obs_data_type=None, debug=False):
+            photo_ivar_obs, zred, vdisp, tage=None, d_lum=None,
+            resolution=None, mask=None, filters=None, obs_data_type=None,
+            debug=False):
         ''' calculated the log likelihood. 
         '''
         # separate SED parameters from Flux Calibration parameters
@@ -616,8 +630,8 @@ class desiMCMC(_MCMC):
                 labels=['sed', 'flux_calib'])
         
         # calculate SED model(theta) 
-        _sed = self.model.sed(tt_sed, zred, vdisp=vdisp, 
-                wavelength=wave_obs, resolution=resolution, filters=filters)
+        _sed = self.model.sed(tt_sed, zred, vdisp=vdisp, wavelength=wave_obs,
+                resolution=resolution, filters=filters, tage=tage, d_lum=d_lum)
         if 'photo' in obs_data_type: _, _flux, photo = _sed
         else: _, _flux = _sed
 
@@ -652,8 +666,8 @@ class desiMCMC(_MCMC):
 
     def _lnPost_args_kwargs(self, wave_obs=None, flux_obs=None,
             flux_ivar_obs=None, resolution=None, photo_obs=None,
-            photo_ivar_obs=None, zred=None, vdisp=None, mask=None,
-            bands=None):
+            photo_ivar_obs=None, zred=None, vdisp=None, tage=None, 
+            d_lum=None, mask=None, bands=None):
         ''' preprocess all the inputs and get arg and kwargs for lnPost method 
         '''
         # check inputs
@@ -695,6 +709,8 @@ class desiMCMC(_MCMC):
                 zred,
                 vdisp) 
         lnpost_kwargs = {
+                'tage': tage, 
+                'd_lum': d_lum, 
                 'resolution': resolution, # resolution data 
                 'mask': _mask,          # emission line mask 
                 'filters': filters,
