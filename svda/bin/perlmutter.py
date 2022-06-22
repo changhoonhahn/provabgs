@@ -13,12 +13,12 @@ def mstar_zmax(hpix, sample='sv3-bright', target='BGS_BRIGHT'):
     '''
     cntnt = '\n'.join([
         "#!/bin/bash", 
-        "#SBATCH --qos=debug", 
-        "#SBATCH --time=00:30:00", 
+        "#SBATCH --qos=regular", 
+        "#SBATCH --time=06:00:00", 
         "#SBATCH --constraint=cpu", 
         "#SBATCH -N 1", 
-        "#SBATCH -J mstar_zmax",  
-        "#SBATCH -o o/mstar_zmaxs.o",
+        "#SBATCH -J mstar_zmax_%i" % hpix,  
+        "#SBATCH -o o/mstar_zmaxs_%i.o" % hpix,
         "", 
         'now=$(date +"%T")', 
         'echo "start time ... $now"', 
@@ -42,5 +42,5 @@ def mstar_zmax(hpix, sample='sv3-bright', target='BGS_BRIGHT'):
 
 # compile Mstar posteriors and zmax values 
 hpixs = [int(fpost.split('-')[-1].split('.')[0]) for fpost in glob.glob('/global/cfs/cdirs/desi/users/chahah/provabgs/svda/provabgs-*hdf5')]
-for hpix in hpixs[:1]: 
+for hpix in hpixs[:5]: 
     mstar_zmax(hpix)

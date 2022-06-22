@@ -36,7 +36,7 @@ m_nmf = Models.NMF(burst=True, emulator=True)
 
 r_pass = specFilter.load_filters('decam2014-r')
 
-z_arr = np.linspace(0.01, 0.6, 100)
+z_arr = np.linspace(0.01, 0.6, 10)
 zmaxes = np.zeros((theta_posteriors.shape[0], theta_posteriors.shape[1]))
 
 for igal in range(theta_posteriors.shape[0]):
@@ -46,9 +46,12 @@ for igal in range(theta_posteriors.shape[0]):
         for _z in z_arr:
             _, _, r_nmgy = m_nmf.sed(theta[:-1], _z, filters=r_pass)
             r_arr.append(22.5 - 2.5 * np.log10(r_nmgy[0]))
-
-        fint_rz = interp1d(r_arr, z_arr, kind='cubic')
-        zmaxes[igal,j] = fint_rz(19.5)
+    
+        if np.max(r_arr) > 19.5: 
+            fint_rz = interp1d(r_arr, z_arr, kind='cubic')
+            zmaxes[igal,j] = fint_rz(19.5)
+        else: 
+            zmaxes[igal,j] = 0.6 
 
 fmstarz = h5py.File(
     os.path.join(dat_dir, 'provabgs-%s-%i.%s.mstar_zmax.hdf5' % (sample, hpix, target)), 'w')
