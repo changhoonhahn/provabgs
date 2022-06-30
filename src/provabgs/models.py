@@ -35,7 +35,7 @@ class Model(object):
         
         if cosmo is None: 
             cosmo = Planck13 # cosmology
-        assert isinstance(cosmo, Cosmology), "cosmo must be a astropy.cosmology.Cosmology instance"
+        assert isinstance(cosmo, Cosmology), "cosmo must be an astropy.cosmology.Cosmology instance"
         self.cosmo = cosmo
 
         # interpolators for speeding up cosmological calculations 
