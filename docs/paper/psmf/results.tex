@@ -1,0 +1,83 @@
+\section{Results} \label{sec:results}
+We are interested in estimating the SMF of BGS galaxies from their individual
+marginalized posteriors, $p(M_* \given {\bfi X_i})$, derived using
+PROVABGS~(Section~\ref{sec:provabgs}). 
+
+we're going to do population inference in a hierarchical bayesian framework and
+use a normalizing flow.
+%We can infer the population hyperparameters, μ∆θ and σ∆θ , using a hierarchical Bayesian framework (e.g. Hogg et al. 2010; Foreman-Mackey et al. 2014; Baronchelli et al. 2020).
+
+why? because it produces unbiased inference. 
+
+why do we use normalizing flows? 
+
+We follow the same approach as \cite{hahn2022} to estimate:
+\begin{align}\label{eq:popinf}
+p(\phi \given \{{\bfi X_i}\}) 
+    =&~\frac{p(\phi)~p( \{{\bfi X_i}\} \given \phi)}{p(\{{\bfi X_i}\})}\\
+    =&~\frac{p(\phi)}{p(\{{\bfi X_i}\})}\int p(\{{\bfi X_i}\} \given \{\theta_i\})~p(\{\theta_i\} \given \phi)~{\rm d}\{\theta_i\}.\\
+    =&~\frac{p(\phi)}{p(\{{\bfi X_i}\})}\prod\limits_{i=1}^N\int p({\bfi X_i} \given \theta_i)~p(\theta_i \given \phi)~{\rm d}\theta_i\\
+    =&~\frac{p(\phi)}{p(\{{\bfi X_i}\})}\prod\limits_{i=1}^N\int \frac{p(\theta_i \given {\bfi X_i})~p({\bfi X_i})}{p(\theta_i)}~p(\theta_i \given \phi)~{\rm d}\theta_i\\
+    =&~p(\phi)\prod\limits_{i=1}^N\int \frac{p(\theta_i \given {\bfi X_i})~p(\theta_i \given \phi)}{p(\theta_i)}~{\rm d}\theta_i. 
+\intertext{
+    We estimate the integral using $S_i$ Monte Carlo samples from the
+    individual posteriors $p(\theta_i \given {\bfi X_i})$: 
+}
+    \approx&~p(\phi)\prod\limits_{i=1}^N\frac{1}{S_i}\sum\limits_{j=1}^{S_i}
+    \frac{p(\theta_{i,j} \given \phi)}{p(\theta_{i,j})}.
+\end{align} 
+
+BGS provides two samples: BGS Bright and Faint. 
+Galaxies in BGS Bright are selected based on a $r < 19.5$ flux limit, while
+the ones in BGS Faint are selected based on a fiber-magnitude and color limit
+and $r < 20.0175$ flux limit. 
+Since neither of these samples are volume-limited and complete as a function
+of $M_*$, we must include the selection effect when estimating the SMF. 
+We do this by including weights derived from $z^{\rm max}$, the maximum
+redshift that galaxy $i$ could be placed and still be included in the BGS
+samples. 
+We derive $z^{\rm max}_{i,j}$ for every MCMC sample of 
+$\theta_{i,j}\sim p(\theta \given {\bfi X_i})$ by redshifting the predicted
+SED. 
+We then derive $V^{\rm max}_{i,j}$, the comoving volume out to 
+$z^{\rm max}_{i,j}$, and weights $w_{i,j} = 1/V^{\rm max}_{i,j}$. 
+We modify Eq.~\ref{eq:popinf} to include $w_{i,j}$: 
+\begin{align}
+p(\phi \given \{{\bfi X_i}\}) 
+    \approx&~\frac{p(\phi)}{\prod\limits_{i=1}^N p({\bfi X_i})^{w_i}} 
+    \prod\limits_{i=1}^N \left(\int p({\bfi X_i} \given \theta_i)~p(\theta_i \given \phi)~{\rm d}\theta_i \right)^{w_i} \\ 
+    \approx&~\frac{p(\phi)}{\prod\limits_{i=1}^N p({\bfi X_i})^{w_i}} 
+    \prod\limits_{i=1}^N \left( \frac{1}{w_i} \sum\limits_{j=1}^{S_i} w_{i,j}
+    \frac{p(\theta_{i,j} \given \phi)}{p(\theta_{i,j})} \right)^{w_i},
+\end{align} 
+where $w_i = \frac{1}{S_i} \sum\limits_{j=1}^{S_i} w_{i,j}$. 
+
+In practice, we do not derive the full posterior 
+$p(\phi \given \{{\bfi X_i}\})$. 
+Instead we derive the maximum a posteriori (MAP) hyperparameter 
+$\phi_{\rm MAP}$ that maximizes $p(\phi \given \{{\bfi X_i}\})$ or 
+$\log p(\phi \given \{{\bfi X_i}\})$.
+We expand, 
+\begin{align}
+\log p(\phi \given \{{\bfi X_i}\}) 
+    \approx&~\log p(\phi) - 
+    \sum\limits_{i=1}^N w_i \log w_i + 
+    \sum\limits_{i=1}^N w_i \log \left(\sum\limits_{j=1}^{S_i} w_{i,j} \frac{p(\theta_{i,j} \given \phi)}{p(\theta_{i,j}} \right).
+\end{align} 
+Since the first two terms are constant, we derive $\phi_{\rm MAP}$ by
+maximizing 
+\begin{equation}
+    \max_\phi \sum\limits_{i=1}^N w_i \log \left(\sum\limits_{j=1}^{S_i} w_{i,j} \frac{p(\theta_{i,j} \given \phi)}{p(\theta_{i,j}} \right).
+\end{equation}
+We use {\sc Adam} optimizer and determine the architecture of the normalizing
+flow through experimentation.  
+
+
+%\approx&~\log p(\phi) - 
+%\log \prod\limits_{i=1}^N p({\bfi X_i})^{w_i} + 
+%\log \prod\limits_{i=1}^N \left(\int p({\bfi X_i} \given \theta_i)~p(\theta_i \given \phi)~{\rm d}\theta_i \right)^{w_i} \\
+%\approx&~\log p(\phi) - 
+%\sum\limits_{i=1}^N w_i \log p({\bfi X_i}) + 
+%\sum\limits_{i=1}^N w_i \log \left(\int p({\bfi X_i} \given \theta_i)~p(\theta_i \given \phi)~{\rm d}\theta_i \right) \\
+%\approx&~\log p(\phi) + 
+%\sum\limits_{i=1}^N w_i \log \left(\frac{1}{w_i} \sum\limits_{j=1}^{S_i} w_{i,j} \frac{p(\theta_{i,j} \given \phi)}{p(\theta_{i,j}} \right) \\
