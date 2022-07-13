@@ -23,8 +23,8 @@ def gather_healpix(hpix, target='BGS_BRIGHT', survey='sv3', n_cpu=32,
     fpetal = os.path.join('/global/cfs/cdirs/desi/users/chahah/provabgs/svda/', 
             'provabgs-%s-bright-%i.%s.hdf5' % (survey, hpix, target)) 
 
-    if os.path.isfile(fpetal): 
-        return None 
+    #if os.path.isfile(fpetal): 
+    #    return None 
 
     re_run = _gather_healpix_posteriors(hpix, target, survey, niter=niter)
 
@@ -125,6 +125,7 @@ def _gather_healpix_posteriors(hpix, target, survey, niter=3000):
             SVDA.healpix(hpix, target=target, redux='fuji', survey=survey)
     ngals = len(meta)
     
+    print('%i: %i' % (hpix, ngals))
     if ngals == 0: return None  
 
     for igal in range(ngals): 
@@ -155,24 +156,25 @@ def _gather_healpix_posteriors(hpix, target, survey, niter=3000):
 
             flux_spec_model     = []
             flux_photo_model    = [] 
-        else: 
-            targetid.append(meta['TARGETID'][igal]) 
-            samples.append(post_i.samples)
-            log_prob.append(post_i.log_prob)
-            redshift.append(post_i.redshift)
 
-            wavelength_obs.append(post_i.wavelength_obs)
-            flux_spec_obs.append(post_i.flux_spec_obs)
-            ivar_spec_obs.append(post_i.ivar_spec_obs)
-            flux_photo_obs.append(post_i.flux_photo_obs)
-            ivar_photo_obs.append(post_i.ivar_photo_obs)
+        targetid.append(meta['TARGETID'][igal]) 
+        samples.append(post_i.samples)
+        log_prob.append(post_i.log_prob)
+        redshift.append(post_i.redshift)
 
-            flux_spec_model.append(post_i.flux_spec_model)
-            flux_photo_model.append(post_i.flux_spec_model)
+        wavelength_obs.append(post_i.wavelength_obs)
+        flux_spec_obs.append(post_i.flux_spec_obs)
+        ivar_spec_obs.append(post_i.ivar_spec_obs)
+        flux_photo_obs.append(post_i.flux_photo_obs)
+        ivar_photo_obs.append(post_i.ivar_photo_obs)
+
+        flux_spec_model.append(post_i.flux_spec_model)
+        flux_photo_model.append(post_i.flux_spec_model)
     
     fpetal = os.path.join('/global/cfs/cdirs/desi/users/chahah/provabgs/svda/', 
             'provabgs-%s-bright-%i.%s.hdf5' % (survey, hpix, target)) 
     petal = h5py.File(fpetal, 'w')
+    petal.create_dataset('targetid', data=np.array(targetid))
     petal.create_dataset('samples', data=np.array(samples))
     petal.create_dataset('log_prob', data=np.array(log_prob))
     petal.create_dataset('redshift', data=np.array(redshift))
@@ -247,29 +249,6 @@ def mstar_zmax(hpix, sample='sv3-bright', target='BGS_BRIGHT'):
 ################################################################
 # BGS BRIGHT
 ################################################################
-tiles_fuji = aTable.Table.read('/global/cfs/cdirs/desi/spectro/redux/fuji/healpix/tilepix.fits') 
-is_bright = (tiles_fuji['PROGRAM'] == 'bright')
-is_sv3 = (tiles_fuji['SURVEY'] == 'sv3')
-
-hpixs = np.unique(np.sort(np.array(tiles_fuji['HEALPIX'][is_bright & is_sv3])))
-
-for hpix in hpixs: 
-    gather_healpix(hpix, target='BGS_BRIGHT', survey='sv3', n_cpu=32,
-            niter=3000, max_hr=12)
-#deploy_redo('BGS_BRIGHT', 'sv3', n_cpu=32, niter=3000, hr=6) 
-
-# compile Mstar posteriors and zmax values 
-#hpixs = [int(fpost.split('-')[-1].split('.')[0]) for fpost in glob.glob('/global/cfs/cdirs/desi/users/chahah/provabgs/svda/provabgs-*BGS_BRIGHT.hdf5')]
-#for hpix in hpixs: 
-#    fzmax = '/global/cfs/cdirs/desi/users/chahah/provabgs/svda/provabgs-sv3-bright-%i.BGS_BRIGHT.mstar_zmax.hdf5' % hpix
-#    if os.path.isfile(fzmax): 
-#        print('%s exists' % fzmax) 
-#        continue
-#    mstar_zmax(hpix)
-
-################################################################
-# BGS FAINT 
-################################################################
 #tiles_fuji = aTable.Table.read('/global/cfs/cdirs/desi/spectro/redux/fuji/healpix/tilepix.fits') 
 #is_bright = (tiles_fuji['PROGRAM'] == 'bright')
 #is_sv3 = (tiles_fuji['SURVEY'] == 'sv3')
@@ -277,6 +256,30 @@ for hpix in hpixs:
 #hpixs = np.unique(np.sort(np.array(tiles_fuji['HEALPIX'][is_bright & is_sv3])))
 #
 #for hpix in hpixs: 
-#    print('>>> %s' % hpix)
-#    gather_healpix(hpix, target='BGS_FAINT', survey='sv3', n_cpu=32,
+#    gather_healpix(hpix, target='BGS_BRIGHT', survey='sv3', n_cpu=32,
 #            niter=3000, max_hr=12)
+#deploy_redo('BGS_BRIGHT', 'sv3', n_cpu=32, niter=3000, hr=6) 
+
+#for hpix in [9791, 9932, 9985, 10145, 10383, 10520, 11349, 15359, 16042, 25599,
+#        25919, 25926, 25935, 25939, 25961, 25964, 25982, 26001, 26004, 26005,
+#        26005, 26006, 26007, 26048, 26087, 26088, 26089, 26092, 26094, 27262]: 
+#    meta, _, _, _, _, _, _, _, _ = \
+#            SVDA.healpix(hpix, target='BGS_BRIGHT', redux='fuji', survey='sv3')
+#    ngals = len(meta)
+#    print('%i: %i gals' % (hpix, ngals))
+
+
+################################################################
+# BGS FAINT 
+################################################################
+tiles_fuji = aTable.Table.read('/global/cfs/cdirs/desi/spectro/redux/fuji/healpix/tilepix.fits') 
+is_bright = (tiles_fuji['PROGRAM'] == 'bright')
+is_sv3 = (tiles_fuji['SURVEY'] == 'sv3')
+
+hpixs = np.unique(np.sort(np.array(tiles_fuji['HEALPIX'][is_bright & is_sv3])))
+print('%i healpix total' % len(hpixs))
+
+for hpix in [9985]:#hpixs: 
+    print('>>> %s' % hpix)
+    gather_healpix(hpix, target='BGS_FAINT', survey='sv3', n_cpu=32,
+            niter=3000, max_hr=12)
