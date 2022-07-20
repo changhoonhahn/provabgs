@@ -13,7 +13,7 @@ import numpy as np
 import scipy.interpolate as Interp
 # --- astropy --- 
 from astropy import units as U
-from astropy.cosmology import Planck13
+from astropy.cosmology import Cosmology, Planck13
 # --- gqp_mc --- 
 from . import util as UT
 
@@ -34,7 +34,9 @@ class Model(object):
         self._init_model(**kwargs)
         
         if cosmo is None: 
-            self.cosmo = Planck13 # cosmology  
+            cosmo = Planck13 # cosmology
+        assert isinstance(cosmo, Cosmology), "cosmo must be an astropy.cosmology.Cosmology instance"
+        self.cosmo = cosmo
 
         # interpolators for speeding up cosmological calculations 
         _z = np.linspace(0.0, 0.5, 100)
