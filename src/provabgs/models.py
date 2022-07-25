@@ -162,7 +162,7 @@ class Model(object):
             return outwave, outspec, maggies
     
     def sed(self, tt, zred, vdisp=0., wavelength=None, resolution=None,
-            filters=None, tage=None, d_lum=None):
+            filters=None, tage=None, d_lum=None, **kwargs):
         ''' compute the redshifted spectral energy distribution (SED) for a
         signle set of parameter values and redshift.
        
