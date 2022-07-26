@@ -356,7 +356,6 @@ class _MCMC(object):
             mcmc = h5py.File(writeout, 'w')  # write 
             mcmc.create_dataset('mcmc_chain0', data=chain) # first chain 
             mcmc.create_dataset('log_prob0', data=lnpost) 
-            newfile = True
     
         # get summary of the posterior from *all* of the chains in file 
         flat_chain = self._flatten_chain(chain)
@@ -377,11 +376,6 @@ class _MCMC(object):
             output['mcmc_chain'] = chain 
             output['log_prob'] = lnpost 
             return output
-
-        if not newfile: 
-            # update these columns
-            for k in output.keys(): 
-                mcmc[k][...] = output[k]
         else: 
             # writeout these columns
             for k in output.keys(): 
@@ -814,9 +808,11 @@ class desiMCMC(_MCMC):
         tt_sed, tt_fcalib = self.prior.separate_theta(output['theta_bestfit'],
                 labels=['sed', 'flux_calib'])
         
-        _sed = self.model.sed(tt_sed, zred, vdisp=vdisp, wavelength=wave_obs,
-                resolution=lnpost_kwargs['resolution'],
-                filters=lnpost_kwargs['filters'])
+        _sed = self.model.sed(tt_sed, zred, vdisp=vdisp, wavelength=wave_obs, 
+                **lnpost_kwargs)
+        #        vdisp=vdisp, wavelength=wave_obs,
+        #        resolution=lnpost_kwargs['resolution'],
+        #        filters=lnpost_kwargs['filters'])
         if 'photo' in obs_data_type: 
             _, _flux, photo = _sed
         else: _, _flux = _sed
@@ -833,10 +829,7 @@ class desiMCMC(_MCMC):
 
         if writeout is not None: 
             # append the extra columns to file 
-            if overwrite: 
-                mcmc = h5py.File(writeout, 'w') 
-            else: 
-                mcmc = h5py.File(writeout, 'a') 
+            mcmc = h5py.File(writeout, 'a') 
 
             for k in output.keys(): 
                 if k not in mcmc.keys() and output[k] is not None: 
@@ -1316,7 +1309,7 @@ class PostOut(object):
         elif 'mcmc_chain' in mcmc.keys(): 
             self.samples    = mcmc['mcmc_chain'][...]
         else: 
-            raise ValueError
+            raise ValueError('issue with %s' % fname) 
         self.log_prob   = mcmc['log_prob'][...]
         
         if 'redshift' in mcmc.keys(): 
