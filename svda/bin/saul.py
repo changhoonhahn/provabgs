@@ -23,8 +23,8 @@ def gather_healpix(hpix, target='BGS_BRIGHT', survey='sv3', n_cpu=32,
     fpetal = os.path.join('/global/cfs/cdirs/desi/users/chahah/provabgs/svda/', 
             'provabgs-%s-bright-%i.%s.hdf5' % (survey, hpix, target)) 
 
-    #if os.path.isfile(fpetal): 
-    #    return None 
+    if os.path.isfile(fpetal): 
+        return None 
 
     re_run = _gather_healpix_posteriors(hpix, target, survey, niter=niter)
 
@@ -76,7 +76,7 @@ def deploy_healpix(hpix, target, survey, n_cpu=32, niter=3000, max_hr=48):
     return None 
 
 
-def deploy_redo(target, survey, n_cpu=32, niter=3000, hr=48): 
+def deploy_redo(target, survey, i0, i1, n_cpu=32, niter=3000, hr=48): 
     ''' deploy provabgs on flagged galaxies and targets 
     '''
     cntnt = '\n'.join([
@@ -85,8 +85,8 @@ def deploy_redo(target, survey, n_cpu=32, niter=3000, hr=48):
         '#SBATCH --time=%s:00:00' % str(hr).zfill(2),
         '#SBATCH --constraint=cpu',
         '#SBATCH -N 1',
-        '#SBATCH -J redo_%s_%s' % (survey, target),
-        '#SBATCH -o o/redo_%s_%s.o' % (survey, target),
+        '#SBATCH -J redo_%s_%s_%i_%i' % (survey, target, i0, i1),
+        '#SBATCH -o o/redo_%s_%s_%i_%i.o' % (survey, target, i0, i1),
         "#SBATCH --mail-type=all",
         "#SBATCH --mail-user=changhoon.hahn@princeton.edu",
         "", 
@@ -99,7 +99,7 @@ def deploy_redo(target, survey, n_cpu=32, niter=3000, hr=48):
         "",
         'export OMP_NUM_THREADS=1', 
         '', 
-        'python -W ignore /global/homes/c/chahah/projects/provabgs/svda/bin/provabgs_redo.py %s %s %i %i' % (target, survey, niter, n_cpu), 
+        'python -W ignore /global/homes/c/chahah/projects/provabgs/svda/bin/provabgs_redo.py %s %s %i %i %i %i' % (target, survey, niter, n_cpu, i0, i1), 
         '', 
         'now=$(date +"%T")',
         'echo "end time ... $now"', 
@@ -209,42 +209,6 @@ def time_healpix(hpix, target, survey, n_cpu):
     ngal = len(meta)
     return int(np.ceil(1.5 * np.ceil(float(ngal) / float(n_cpu))) )
 
-#####################################################################################
-# compile mstar, zmax  
-#####################################################################################
-
-def mstar_zmax(hpix, sample='sv3-bright', target='BGS_BRIGHT'): 
-    '''
-    '''
-    cntnt = '\n'.join([
-        "#!/bin/bash", 
-        "#SBATCH --qos=regular", 
-        "#SBATCH --time=12:00:00", 
-        "#SBATCH --constraint=cpu", 
-        "#SBATCH -N 1", 
-        "#SBATCH -J mstar_zmax_%i" % hpix,  
-        "#SBATCH -o o/mstar_zmaxs_%i.o" % hpix,
-        "", 
-        'now=$(date +"%T")', 
-        'echo "start time ... $now"', 
-        "", 
-        "module load python",
-        "conda activate gqp", 
-        "",
-        "python /global/homes/c/chahah/projects/provabgs/svda/bin/compile_mstar_zmax.py %s %i %s" % (sample, hpix, target), 
-        "", 
-        'now=$(date +"%T")', 
-        'echo "end time ... $now"', 
-        ""]) 
-
-    # create the slurm script execute it and remove it
-    f = open('_job.slurm','w')
-    f.write(cntnt)
-    f.close()
-    os.system('sbatch _job.slurm')
-    os.system('rm _job.slurm')
-    return None 
-
 
 ################################################################
 # BGS BRIGHT
@@ -258,7 +222,6 @@ def mstar_zmax(hpix, sample='sv3-bright', target='BGS_BRIGHT'):
 #for hpix in hpixs: 
 #    gather_healpix(hpix, target='BGS_BRIGHT', survey='sv3', n_cpu=32,
 #            niter=3000, max_hr=12)
-#deploy_redo('BGS_BRIGHT', 'sv3', n_cpu=32, niter=3000, hr=6) 
 
 #for hpix in [9791, 9932, 9985, 10145, 10383, 10520, 11349, 15359, 16042, 25599,
 #        25919, 25926, 25935, 25939, 25961, 25964, 25982, 26001, 26004, 26005,
@@ -268,18 +231,26 @@ def mstar_zmax(hpix, sample='sv3-bright', target='BGS_BRIGHT'):
 #    ngals = len(meta)
 #    print('%i: %i gals' % (hpix, ngals))
 
+# re-run select BGS Bright galaxies 
+for i in range(11):  #3333
+    deploy_redo('BGS_BRIGHT', 'sv3', i*300, (i+1)*300, n_cpu=32, niter=3000, hr=12) 
+
 
 ################################################################
 # BGS FAINT 
 ################################################################
-tiles_fuji = aTable.Table.read('/global/cfs/cdirs/desi/spectro/redux/fuji/healpix/tilepix.fits') 
-is_bright = (tiles_fuji['PROGRAM'] == 'bright')
-is_sv3 = (tiles_fuji['SURVEY'] == 'sv3')
+#tiles_fuji = aTable.Table.read('/global/cfs/cdirs/desi/spectro/redux/fuji/healpix/tilepix.fits') 
+#is_bright = (tiles_fuji['PROGRAM'] == 'bright')
+#is_sv3 = (tiles_fuji['SURVEY'] == 'sv3')
+#
+#hpixs = np.unique(np.sort(np.array(tiles_fuji['HEALPIX'][is_bright & is_sv3])))
+#print('%i healpix total' % len(hpixs))
 
-hpixs = np.unique(np.sort(np.array(tiles_fuji['HEALPIX'][is_bright & is_sv3])))
-print('%i healpix total' % len(hpixs))
+#for hpix in hpixs: 
+#    print('>>> %s' % hpix)
+#    gather_healpix(hpix, target='BGS_FAINT', survey='sv3', n_cpu=32,
+#            niter=3000, max_hr=12)
 
-for hpix in [9985]:#hpixs: 
-    print('>>> %s' % hpix)
-    gather_healpix(hpix, target='BGS_FAINT', survey='sv3', n_cpu=32,
-            niter=3000, max_hr=12)
+# re-run select BGS Faint galaxies 
+for i in range(13): # 3855
+    deploy_redo('BGS_FAINT', 'sv3', i*300, (i+1)*300, n_cpu=32, niter=3000, hr=12) 
