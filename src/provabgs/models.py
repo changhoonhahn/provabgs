@@ -13,7 +13,8 @@ import numpy as np
 import scipy.interpolate as Interp
 # --- astropy --- 
 from astropy import units as U
-from astropy.cosmology import Cosmology, Planck13
+from astropy.cosmology.core import Cosmology
+from astropy.cosmology import Planck13
 # --- gqp_mc --- 
 from . import util as UT
 
