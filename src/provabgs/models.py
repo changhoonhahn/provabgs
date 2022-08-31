@@ -413,6 +413,7 @@ class NMF(Model):
                 #_w, _lum_burst = self._fsps_burst(tt)
                 #lum_burst = _lum_burst[(_w > 2300.) & (_w < 60000.)]
 
+            # tburst > tage shouldn't really happen
             # renormalize NMF contribution  
             lum_ssp *= (1. - fburst) 
 
@@ -742,6 +743,108 @@ class NMF(Model):
         self._burst_emu_nlayers = np.array(self._burst_emu_nlayers)
         self._burst_emu_waves = np.concatenate(self._burst_emu_wave) 
         return None 
+
+    def _surviving_mass(self, tt, tage): 
+        ''' calculate surviving mass given SPS parameters and age 
+
+        Parameters 
+        ----------
+        tt : 1d array 
+            Nparam array that specifies the parameter values 
+
+        tage : float 
+            age of galaxy 
+        
+
+        Returns
+        -------
+        msurv : float 
+            suviving mass in units of Msun
+
+        Notes
+        -----
+        * 2022/08/30: implemented
+        '''
+        if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
+        theta = self._parse_theta(tt) 
+        
+        assert np.isclose(np.sum([theta['beta1_sfh'], theta['beta2_sfh'],
+            theta['beta3_sfh'], theta['beta4_sfh']]), 1.), "SFH basis coefficients should add up to 1"
+        
+        # NMF SFH(t) noramlized to 1 **without burst**
+        tlb_edges, sfh = self.SFH(np.concatenate([[0.], tt[1:]]), tage=tage, _burst=False)  
+        # NMF ZH at lookback time bins 
+        _, zh = self.ZH(tt, tage=tage)
+        
+        tages = 0.5 * (tlb_edges[1:] + tlb_edges[:-1]) # ages of SSP
+        dt = np.diff(tlb_edges) # bin widths
+    
+        # look over log-spaced lookback time bins and add up SSPs
+        msurv_t = []
+        for i, tage in enumerate(tages): 
+            m = 1e9 * dt[i] * sfh[i] # mass formed in this bin 
+            if m == 0 and i != 0: continue 
+
+            self._ssp.params['logzsol'] = np.log10(zh[i]/0.0190) # log(Z/Zsun)
+            self._ssp.params['dust1'] = theta['dust1']
+            self._ssp.params['dust2'] = theta['dust2']  
+            self._ssp.params['dust_index'] = theta['dust_index']
+            
+            wave_rest, lum_i = self._ssp.get_spectrum(tage=tage, peraa=True) # in units of Lsun/AA
+            # note that this spectrum is normalized such that the total formed
+            # mass = 1 Msun
+            msurv_t.append(m * self._ssp.stellar_mass)
+        msurv = np.sum(msurv_t)
+    
+        # add burst contribution 
+        if self._burst: 
+            fburst = theta['fburst']
+            tburst = theta['tburst'] 
+
+            # if starburst is within the age of the galaxy 
+            msurv_burst = 0. 
+            if tburst < tage: 
+                msurv_burst = self._surviving_mass_burst(tt)
+
+            # renormalize NMF contribution  
+            msurv *= (1. - fburst) 
+
+            # add in burst contribution 
+            msurv += fburst * msurv_burst 
+
+        # normalize by stellar mass 
+        msurv *= (10**theta['logmstar'])
+        return msurv 
+
+    def _surviving_mass_burst(self, tt, debug=False):
+        ''' surviving mass of burst component 
+        '''
+        if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
+        theta = self._parse_theta(tt) 
+        tt_zh = np.array([theta['gamma1_zh'], theta['gamma2_zh']])
+
+        tburst = theta['tburst'] 
+        assert tburst > 1e-2, "burst currently only supported for tburst > 1e-2 Gyr"
+
+        # get metallicity at tburst 
+        zburst = np.sum(np.array([tt_zh[i] * self._zh_basis[i](tburst) 
+            for i in range(self._N_nmf_zh)])).clip(self._Z_min, self._Z_max) 
+        
+        if debug:
+            print('zburst=%e' % zburst) 
+            print('dust2=%f' % dust2) 
+            print('dust_index=%f' % dust_index) 
+    
+        # luminosity of SSP at tburst 
+        self._ssp.params['logzsol'] = np.log10(zburst/0.0190) # log(Z/Zsun)
+        self._ssp.params['dust1'] = 0. # no birth cloud attenuation for tage > 1e-2 Gyr
+        self._ssp.params['dust2'] = theta['dust2']
+        self._ssp.params['dust_index'] = theta['dust_index'] 
+        
+        wave_rest, lum_burst = self._ssp.get_spectrum(tage=tburst, peraa=True) # in units of Lsun/AA
+        # note that this spectrum is normalized such that the total formed
+        # mass = 1 Msun
+        return self._ssp.stellar_mass
 
     def SFH(self, tt, zred=None, tage=None, _burst=True): 
         ''' star formation history for given set of parameter values and
