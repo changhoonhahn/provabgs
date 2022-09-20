@@ -4,20 +4,18 @@ import numpy as np
 from functools import partial
 from multiprocessing.pool import Pool 
 
-import svda as SVDA
-
 from provabgs import util as UT 
 from provabgs import infer as Infer
 from provabgs import models as Models
 from provabgs import flux_calib as FluxCalib
 
-i_obs = int(sys.argv[1])
-niter = int(sys.argv[2])
-n_cpu = int(sys.argv[3])
+i_batch = int(sys.argv[1])
+niter   = int(sys.argv[2])
+n_cpu   = int(sys.argv[3])
 
 # read preprocessed photometry and spectroscopy of LOWZ targets (see
 # lowz.ipynb) 
-fh5 = h5py.File(os.path.join(dat_dir, 'lowz.obs.%iof25.hdf5' % i_obs), 'r')
+fh5 = h5py.File('/global/cfs/cdirs/desi/users/chahah/provabgs/lowz/lowz.obs.%iof25.hdf5' % i_batch, 'r')
 
 targetid = fh5['TARGETID'][...].astype(int)
 
@@ -36,7 +34,7 @@ zred = fh5['redshift'][...]
 fh5.close()
 
 ngals = len(zred)
-print('%i LOWZ targets in batch %i' % (ngals, i_obs))
+print('%i LOWZ targets in batch %i' % (ngals, i_batch))
 
 # declare SPS model
 m_nmf = Models.NMF(burst=True, emulator=True)
