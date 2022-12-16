@@ -354,6 +354,9 @@ class NMF(Model):
         # metallicity range set by MIST isochrone
         self._Z_min = 4.49043431e-05
         self._Z_max = 4.49043431e-02
+        
+        self._msurv_nmf_emu = None
+
         super().__init__(cosmo=cosmo) # initializes the model
 
     def _emu(self, tt, tage): 
@@ -744,8 +747,93 @@ class NMF(Model):
         self._burst_emu_waves = np.concatenate(self._burst_emu_wave) 
         return None 
 
-    def _surviving_mass(self, tt, tage): 
+    def _load_emulator_msurv(self): 
+        ''' load emulator for Msurv calculation. At the moment implemented in
+        pytorch
+        '''
+        import torch
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+        # load nmf Msurv
+        self._msurv_nmf_theta_shift = np.load(os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), 'dat', 'thetas_shift.nmf.npy'))
+        self._msurv_nmf_theta_scale = np.load(os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), 'dat', 'thetas_scale.nmf.npy'))
+        
+        self._msurv_nmf_msurv_shift = np.load(os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), 'dat', 'msurv_nmf_shift.npy'))
+        self._msurv_nmf_msurv_scale = np.load(os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), 'dat', 'msurv_nmf_scale.npy'))
+
+        self._msurv_nmf_emu = torch.load(os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), 'dat', 'emu_msurv.nmf.1.pt'),
+                                        map_location=self.device) 
+
+        # load burst Msurv
+        self._msurv_burst_theta_shift = np.load(os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), 'dat', 'thetas_shift.burst.npy'))
+        self._msurv_burst_theta_scale = np.load(os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), 'dat', 'thetas_scale.burst.npy'))
+
+        self._msurv_burst_msurv_shift = np.load(os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), 'dat', 'msurv_burst_shift.npy'))
+        self._msurv_burst_msurv_scale = np.load(os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), 'dat', 'msurv_burst_scale.npy'))
+        
+        self._msurv_burst_emu = torch.load(os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), 'dat', 'emu_msurv.burst.0.pt'),
+                                        map_location=self.device) 
+        return None 
+
+    def _surviving_mass(self, tt, tage, emulator=True): 
         ''' calculate surviving mass given SPS parameters and age 
+
+        Parameters 
+        ----------
+        tt : 1d array 
+            Nparam array that specifies the parameter values 
+
+        tage : float 
+            age of galaxy 
+        
+
+        Returns
+        -------
+        msurv : float 
+            suviving mass in units of Msun
+
+        Notes
+        -----
+        * 2022/08/30: implemented
+        '''
+        if emulator and self._msurv_nmf_emu is None: 
+            self._load_emulator_msurv()
+
+        msurv = self._surviving_mass_nmf(tt, tage, emulator=emulator)
+    
+        # add burst contribution 
+        if self._burst: 
+            fburst = theta['fburst']
+            tburst = theta['tburst'] 
+
+            # if starburst is within the age of the galaxy 
+            msurv_burst = 0. 
+            if tburst < tage: 
+                msurv_burst = self._surviving_mass_burst(tt, emulator=emulator)
+
+            # renormalize NMF contribution  
+            msurv *= (1. - fburst) 
+
+            # add in burst contribution 
+            msurv += fburst * msurv_burst 
+
+        # normalize by stellar mass 
+        msurv *= (10**theta['logmstar'])
+        return msurv 
+
+    def _surviving_mass_nmf(self, tt, tage, emulator=True): 
+        ''' calculate surviving mass given SPS parameters and age for nmf
+        component 
 
         Parameters 
         ----------
@@ -771,80 +859,85 @@ class NMF(Model):
         assert np.isclose(np.sum([theta['beta1_sfh'], theta['beta2_sfh'],
             theta['beta3_sfh'], theta['beta4_sfh']]), 1.), "SFH basis coefficients should add up to 1"
         
-        # NMF SFH(t) noramlized to 1 **without burst**
-        tlb_edges, sfh = self.SFH(np.concatenate([[0.], tt[1:]]), tage=tage, _burst=False)  
-        # NMF ZH at lookback time bins 
-        _, zh = self.ZH(tt, tage=tage)
-        
-        tages = 0.5 * (tlb_edges[1:] + tlb_edges[:-1]) # ages of SSP
-        dt = np.diff(tlb_edges) # bin widths
-    
-        # look over log-spaced lookback time bins and add up SSPs
-        msurv_t = []
-        for i, tage in enumerate(tages): 
-            m = 1e9 * dt[i] * sfh[i] # mass formed in this bin 
-            if m == 0 and i != 0: continue 
+        if emulator: 
+            betas = np.atleast_2d(np.array([thetas['beta1_sfh'], thetas['beta2_sfh'],
+                              thetas['beta3_sfh'], thetas['beta4_sfh']]).T)
 
-            self._ssp.params['logzsol'] = np.log10(zh[i]/0.0190) # log(Z/Zsun)
-            self._ssp.params['dust1'] = theta['dust1']
-            self._ssp.params['dust2'] = theta['dust2']  
-            self._ssp.params['dust_index'] = theta['dust_index']
+            betas_t = np.zeros((betas.shape[0],3))
+            betas_t[:,0] = (1. - betas[:,0]).clip(1e-8, None)
+            for i in range(1,3):
+                betas_t[:,i] = 1. - (beta[:,i] / np.prod(beta_t[:,:i], axis=1))
+
+            tt_zh = np.atleast_2d(np.array([theta['gamma1_zh'], theta['gamma2_zh']]).T)
+            thetas = np.concatenate([betas_t, np.log10(tt_zh), tage[:,None]], axis=1)
+
+            _thetas = (thetas - self._msurv_nmf_theta_shift) / self._msurv_nmf_theta_scale
+
+            with torch.no_grad(): 
+                _msurv = self._msurv_nmf_emu(torch.tensor(_thetas.astype(np.float32)).to(device)).cpu().numpy()
+            return (_msurv * self._msurv_nmf_msurv_scale) + self._msurv_nmf_msurv_shift
+        else: 
+            # NMF SFH(t) noramlized to 1 **without burst**
+            tlb_edges, sfh = self.SFH(np.concatenate([[0.], tt[1:]]), tage=tage, _burst=False)  
+            # NMF ZH at lookback time bins 
+            _, zh = self.ZH(tt, tage=tage)
             
-            wave_rest, lum_i = self._ssp.get_spectrum(tage=tage, peraa=True) # in units of Lsun/AA
-            # note that this spectrum is normalized such that the total formed
-            # mass = 1 Msun
-            msurv_t.append(m * self._ssp.stellar_mass)
-        msurv = np.sum(msurv_t)
-    
-        # add burst contribution 
-        if self._burst: 
-            fburst = theta['fburst']
-            tburst = theta['tburst'] 
+            tages = 0.5 * (tlb_edges[1:] + tlb_edges[:-1]) # ages of SSP
+            dt = np.diff(tlb_edges) # bin widths
+        
+            # look over log-spaced lookback time bins and add up SSPs
+            msurv_t = []
+            for i, tage in enumerate(tages): 
+                m = 1e9 * dt[i] * sfh[i] # mass formed in this bin 
+                if m == 0 and i != 0: continue 
 
-            # if starburst is within the age of the galaxy 
-            msurv_burst = 0. 
-            if tburst < tage: 
-                msurv_burst = self._surviving_mass_burst(tt)
+                self._ssp.params['logzsol'] = np.log10(zh[i]/0.0190) # log(Z/Zsun)
+                self._ssp.params['dust1'] = theta['dust1']
+                self._ssp.params['dust2'] = theta['dust2']  
+                self._ssp.params['dust_index'] = theta['dust_index']
+                
+                wave_rest, lum_i = self._ssp.get_spectrum(tage=tage, peraa=True) # in units of Lsun/AA
+                # note that this spectrum is normalized such that the total formed
+                # mass = 1 Msun
+                msurv_t.append(m * self._ssp.stellar_mass)
+            return np.sum(msurv_t)
 
-            # renormalize NMF contribution  
-            msurv *= (1. - fburst) 
-
-            # add in burst contribution 
-            msurv += fburst * msurv_burst 
-
-        # normalize by stellar mass 
-        msurv *= (10**theta['logmstar'])
-        return msurv 
-
-    def _surviving_mass_burst(self, tt, debug=False):
+    def _surviving_mass_burst(self, tt, emulator=True):
         ''' surviving mass of burst component 
         '''
         if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
         theta = self._parse_theta(tt) 
+
         tt_zh = np.array([theta['gamma1_zh'], theta['gamma2_zh']])
 
         tburst = theta['tburst'] 
         assert tburst > 1e-2, "burst currently only supported for tburst > 1e-2 Gyr"
 
-        # get metallicity at tburst 
-        zburst = np.sum(np.array([tt_zh[i] * self._zh_basis[i](tburst) 
-            for i in range(self._N_nmf_zh)])).clip(self._Z_min, self._Z_max) 
-        
-        if debug:
-            print('zburst=%e' % zburst) 
-            print('dust2=%f' % dust2) 
-            print('dust_index=%f' % dust_index) 
-    
-        # luminosity of SSP at tburst 
-        self._ssp.params['logzsol'] = np.log10(zburst/0.0190) # log(Z/Zsun)
-        self._ssp.params['dust1'] = 0. # no birth cloud attenuation for tage > 1e-2 Gyr
-        self._ssp.params['dust2'] = theta['dust2']
-        self._ssp.params['dust_index'] = theta['dust_index'] 
-        
-        wave_rest, lum_burst = self._ssp.get_spectrum(tage=tburst, peraa=True) # in units of Lsun/AA
-        # note that this spectrum is normalized such that the total formed
-        # mass = 1 Msun
-        return self._ssp.stellar_mass
+        if emulator: 
+            _tt = np.atleast_2d(np.array([theta['tburst'], theta['gamma1_zh'], theta['gamma2_zh']]).T)
+            thetas = np.concatenate([np.log10(_tt), tage[:,None]], axis=1)
+
+            _thetas = (thetas - self._msurv_burst_theta_shift) / self._msurv_burst_theta_scale
+
+            with torch.no_grad(): 
+                _msurv = self._msurv_burst_emu(torch.tensor(_thetas.astype(np.float32)).to(device)).cpu().numpy()
+            return (_msurv * self._msurv_burst_msurv_scale) + self._msurv_burst_msurv_shift
+
+        else: 
+            # get metallicity at tburst 
+            zburst = np.sum(np.array([tt_zh[i] * self._zh_basis[i](tburst) 
+                for i in range(self._N_nmf_zh)])).clip(self._Z_min, self._Z_max) 
+            
+            # luminosity of SSP at tburst 
+            self._ssp.params['logzsol'] = np.log10(zburst/0.0190) # log(Z/Zsun)
+            self._ssp.params['dust1'] = 0. # no birth cloud attenuation for tage > 1e-2 Gyr
+            self._ssp.params['dust2'] = theta['dust2']
+            self._ssp.params['dust_index'] = theta['dust_index'] 
+            
+            wave_rest, lum_burst = self._ssp.get_spectrum(tage=tburst, peraa=True) # in units of Lsun/AA
+            # note that this spectrum is normalized such that the total formed
+            # mass = 1 Msun
+            return self._ssp.stellar_mass
 
     def SFH(self, tt, zred=None, tage=None, _burst=True): 
         ''' star formation history for given set of parameter values and
