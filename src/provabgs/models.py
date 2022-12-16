@@ -23,6 +23,13 @@ except ImportError:
     warnings.warn('import error with fsps; only use emulators')
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
+try: 
+    import torch
+except ImportError:
+    warnings.warn('import error with pytorch; cannot use msurv emulator')
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+
 
 class Model(object): 
     ''' Base class object for different SPS models. Different `Model` objects
@@ -751,7 +758,8 @@ class NMF(Model):
         ''' load emulator for Msurv calculation. At the moment implemented in
         pytorch
         '''
-        import torch
+        from .nns import MLP
+
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         # load nmf Msurv
@@ -764,10 +772,10 @@ class NMF(Model):
             os.path.dirname(os.path.realpath(__file__)), 'dat', 'msurv_nmf_shift.npy'))
         self._msurv_nmf_msurv_scale = np.load(os.path.join(
             os.path.dirname(os.path.realpath(__file__)), 'dat', 'msurv_nmf_scale.npy'))
-
-        self._msurv_nmf_emu = torch.load(os.path.join(
-            os.path.dirname(os.path.realpath(__file__)), 'dat', 'emu_msurv.nmf.1.pt'),
-                                        map_location=self.device) 
+        self._msurv_nmf_emu = MLP(6, 1, n_hidden=[128, 128, 128, 128, 128])
+        self._msurv_nmf_emu.load_state_dict(
+                torch.load(os.path.join(os.path.dirname(os.path.realpath(__file__)), 
+                    'dat', 'emu_msurv.nmf.1.pt')) )
 
         # load burst Msurv
         self._msurv_burst_theta_shift = np.load(os.path.join(
@@ -780,9 +788,10 @@ class NMF(Model):
         self._msurv_burst_msurv_scale = np.load(os.path.join(
             os.path.dirname(os.path.realpath(__file__)), 'dat', 'msurv_burst_scale.npy'))
         
-        self._msurv_burst_emu = torch.load(os.path.join(
-            os.path.dirname(os.path.realpath(__file__)), 'dat', 'emu_msurv.burst.0.pt'),
-                                        map_location=self.device) 
+        self._msurv_burst_emu = MLP(4, 1, n_hidden=[128, 128, 128, 128, 128])
+        self._msurv_burst_emu.load_state_dict(torch.load(
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat', 
+                'emu_msurv.burst.0.pt')))
         return None 
 
     def _surviving_mass(self, tt, tage, emulator=True): 
@@ -813,13 +822,22 @@ class NMF(Model):
     
         # add burst contribution 
         if self._burst: 
+            theta = self._parse_theta(tt) 
             fburst = theta['fburst']
             tburst = theta['tburst'] 
 
             # if starburst is within the age of the galaxy 
-            msurv_burst = 0. 
-            if tburst < tage: 
-                msurv_burst = self._surviving_mass_burst(tt, emulator=emulator)
+            if len(np.atleast_1d(tburst)) == 1: 
+                msurv_burst = 0. 
+                if tburst < tage: 
+                    msurv_burst = self._surviving_mass_burst(tt, tage, emulator=emulator)
+            else: 
+                msurv_burst = np.zeros(len(tburst))
+                if isinstance(tage, float): _tage = np.repeat(tage, len(tburst))
+                else: _tage = tage 
+
+                msurv_burst[tburst < tage] = self._surviving_mass_burst(tt[tburst < tage], 
+                        _tage[tburst < tage], emulator=emulator)
 
             # renormalize NMF contribution  
             msurv *= (1. - fburst) 
@@ -854,29 +872,33 @@ class NMF(Model):
         * 2022/08/30: implemented
         '''
         if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
-        theta = self._parse_theta(tt) 
-        
-        assert np.isclose(np.sum([theta['beta1_sfh'], theta['beta2_sfh'],
-            theta['beta3_sfh'], theta['beta4_sfh']]), 1.), "SFH basis coefficients should add up to 1"
         
         if emulator: 
-            betas = np.atleast_2d(np.array([thetas['beta1_sfh'], thetas['beta2_sfh'],
-                              thetas['beta3_sfh'], thetas['beta4_sfh']]).T)
-
+            tt = np.atleast_2d(tt)
+            
+            if tt.shape[0] > 1 and isinstance(tage, float): _tage = np.repeat(tage, tt.shape[0])
+            else: _tage = np.atleast_1d(tage)
+        
+            betas = tt[:,1:5]
             betas_t = np.zeros((betas.shape[0],3))
             betas_t[:,0] = (1. - betas[:,0]).clip(1e-8, None)
             for i in range(1,3):
-                betas_t[:,i] = 1. - (beta[:,i] / np.prod(beta_t[:,:i], axis=1))
+                betas_t[:,i] = 1. - (betas[:,i] / np.prod(betas_t[:,:i], axis=1))
 
-            tt_zh = np.atleast_2d(np.array([theta['gamma1_zh'], theta['gamma2_zh']]).T)
-            thetas = np.concatenate([betas_t, np.log10(tt_zh), tage[:,None]], axis=1)
+            tt_zh = tt[:,7:9]
+            thetas = np.concatenate([betas_t, np.log10(tt_zh), _tage[:,None]], axis=1)
 
             _thetas = (thetas - self._msurv_nmf_theta_shift) / self._msurv_nmf_theta_scale
 
             with torch.no_grad(): 
-                _msurv = self._msurv_nmf_emu(torch.tensor(_thetas.astype(np.float32)).to(device)).cpu().numpy()
-            return (_msurv * self._msurv_nmf_msurv_scale) + self._msurv_nmf_msurv_shift
+                _msurv = self._msurv_nmf_emu(torch.tensor(_thetas.astype(np.float32)).to(self.device)).cpu().numpy()
+            if tt.shape[0] == 1: 
+                return ((_msurv * self._msurv_nmf_msurv_scale) + self._msurv_nmf_msurv_shift)[0]
+            else: 
+                return ((_msurv * self._msurv_nmf_msurv_scale) + self._msurv_nmf_msurv_shift).flatten()
         else: 
+            theta = self._parse_theta(tt) 
+
             # NMF SFH(t) noramlized to 1 **without burst**
             tlb_edges, sfh = self.SFH(np.concatenate([[0.], tt[1:]]), tage=tage, _burst=False)  
             # NMF ZH at lookback time bins 
@@ -902,28 +924,33 @@ class NMF(Model):
                 msurv_t.append(m * self._ssp.stellar_mass)
             return np.sum(msurv_t)
 
-    def _surviving_mass_burst(self, tt, emulator=True):
+    def _surviving_mass_burst(self, tt, tage, emulator=True):
         ''' surviving mass of burst component 
         '''
         if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
-        theta = self._parse_theta(tt) 
-
-        tt_zh = np.array([theta['gamma1_zh'], theta['gamma2_zh']])
-
-        tburst = theta['tburst'] 
-        assert tburst > 1e-2, "burst currently only supported for tburst > 1e-2 Gyr"
 
         if emulator: 
-            _tt = np.atleast_2d(np.array([theta['tburst'], theta['gamma1_zh'], theta['gamma2_zh']]).T)
-            thetas = np.concatenate([np.log10(_tt), tage[:,None]], axis=1)
+            tt = np.atleast_2d(tt) 
+
+            thetas = np.concatenate([np.log10(tt[:,6:9]), np.atleast_1d(tage)[:,None]], axis=1)
 
             _thetas = (thetas - self._msurv_burst_theta_shift) / self._msurv_burst_theta_scale
 
             with torch.no_grad(): 
-                _msurv = self._msurv_burst_emu(torch.tensor(_thetas.astype(np.float32)).to(device)).cpu().numpy()
-            return (_msurv * self._msurv_burst_msurv_scale) + self._msurv_burst_msurv_shift
+                _msurv = self._msurv_burst_emu(torch.tensor(_thetas.astype(np.float32)).to(self.device)).cpu().numpy()
 
+            if tt.shape[0] == 1: 
+                return ((_msurv * self._msurv_burst_msurv_scale) + self._msurv_burst_msurv_shift)[0]
+            else: 
+                return ((_msurv * self._msurv_burst_msurv_scale) + self._msurv_burst_msurv_shift).flatten()
         else: 
+            theta = self._parse_theta(tt) 
+
+            tt_zh = np.array([theta['gamma1_zh'], theta['gamma2_zh']])
+
+            tburst = theta['tburst'] 
+            assert tburst > 1e-2, "burst currently only supported for tburst > 1e-2 Gyr"
+
             # get metallicity at tburst 
             zburst = np.sum(np.array([tt_zh[i] * self._zh_basis[i](tburst) 
                 for i in range(self._N_nmf_zh)])).clip(self._Z_min, self._Z_max) 
