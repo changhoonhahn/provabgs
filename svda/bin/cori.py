@@ -334,6 +334,83 @@ def deploy_petal(tileid, petal, target, survey, n_cpu=32, niter=3000):
     return None 
 
 
+def deploy_redo(target, survey, i0, i1, n_cpu=32, niter=3000, hr=48): 
+    ''' deploy provabgs on flagged galaxies and targets 
+    '''
+    cntnt = '\n'.join([
+        "#!/bin/bash", 
+        '#SBATCH --qos=regular',
+        '#SBATCH --time=%s:59:59' % str(hr-1).zfill(2),
+        '#SBATCH --constraint=haswell',
+        '#SBATCH -N 1',
+        '#SBATCH -J redo_%s_%s_%i_%i' % (survey, target, i0, i1),
+        '#SBATCH -o o/redo_%s_%s_%i_%i.o' % (survey, target, i0, i1),
+        "#SBATCH --mail-type=all",
+        "#SBATCH --mail-user=changhoon.hahn@princeton.edu",
+        "", 
+        'now=$(date +"%T")', 
+        'echo "start time ... $now"', 
+        '', #'module load python', 
+        'conda activate gqp', 
+        'module unload PrgEnv-intel', 
+        'module load PrgEnv-gnu', 
+        "",
+        'export OMP_NUM_THREADS=1', 
+        '', 
+        'python -W ignore /global/homes/c/chahah/projects/provabgs/svda/bin/2_provabgs_redo.py %s %s %i %i %i %i' % (target, survey, niter, n_cpu, i0, i1), 
+        '', 
+        'now=$(date +"%T")',
+        'echo "end time ... $now"', 
+        ""]) 
+        
+    # create the script.sh file, execute it and remove it
+    f = open('script.slurm','w')
+    f.write(cntnt)
+    f.close()
+
+    os.system('sbatch script.slurm')
+    os.system('rm script.slurm')
+    return None 
+
+
+def hpix_add_value(target, survey, hr=3): 
+    ''' deploy script to calculate zmax and surviving stellar mass 
+    '''
+    cntnt = '\n'.join([
+        "#!/bin/bash", 
+        '#SBATCH --qos=regular',
+        '#SBATCH --time=%s:59:59' % str(hr-1).zfill(2),
+        '#SBATCH --constraint=haswell',
+        '#SBATCH -N 1',
+        '#SBATCH -J va_hpix_%s_%s' % (survey, target),
+        '#SBATCH -o o/va_hpix_%s_%s.o' % (survey, target),
+        "#SBATCH --mail-type=all",
+        "#SBATCH --mail-user=changhoon.hahn@princeton.edu",
+        "", 
+        'now=$(date +"%T")', 
+        'echo "start time ... $now"', 
+        '', #'module load python', 
+        'conda activate gqp', 
+        'module unload PrgEnv-intel', 
+        'module load PrgEnv-gnu', 
+        "",
+        'export OMP_NUM_THREADS=1', 
+        '', 
+        'python -W ignore /global/homes/c/chahah/projects/provabgs/svda/bin/4_va_hpix.py %s %s' % (target, survey), 
+        '', 
+        'now=$(date +"%T")',
+        'echo "end time ... $now"', 
+        ""]) 
+        
+    # create the script.sh file, execute it and remove it
+    f = open('script.slurm','w')
+    f.write(cntnt)
+    f.close()
+
+    os.system('sbatch script.slurm')
+    os.system('rm script.slurm')
+    return None 
+
 #tiles_fuji = aTable.Table.read(os.path.join(dir_fuji, 'tiles-fuji.fits'))
 #is_bright = (tiles_fuji['PROGRAM'] == 'bright')
 #is_sv3 = (tiles_fuji['SURVEY'] == 'sv3')
@@ -344,12 +421,23 @@ def deploy_petal(tileid, petal, target, survey, n_cpu=32, niter=3000):
 #    print(tileid) 
 #    gather_petals(tileid, target='BGS_BRIGHT', survey='sv3', n_cpu=32, niter=3000)
 
-tiles_fuji = aTable.Table.read('/global/cfs/cdirs/desi/spectro/redux/fuji/healpix/tilepix.fits') 
-is_bright = (tiles_fuji['PROGRAM'] == 'bright')
-is_sv3 = (tiles_fuji['SURVEY'] == 'sv3')
+#tiles_fuji = aTable.Table.read('/global/cfs/cdirs/desi/spectro/redux/fuji/healpix/tilepix.fits') 
+#is_bright = (tiles_fuji['PROGRAM'] == 'bright')
+#is_sv3 = (tiles_fuji['SURVEY'] == 'sv3')
+#
+#hpixs = np.unique(np.sort(np.array(tiles_fuji['HEALPIX'][is_bright & is_sv3])))
+#
+#for hpix in hpixs: 
+#    gather_healpix(hpix, target='BGS_BRIGHT', survey='sv3', n_cpu=32,
+#            niter=3000, max_hr=6)
 
-hpixs = np.unique(np.sort(np.array(tiles_fuji['HEALPIX'][is_bright & is_sv3])))
 
-for hpix in hpixs: 
-    gather_healpix(hpix, target='BGS_BRIGHT', survey='sv3', n_cpu=32,
-            niter=3000, max_hr=6)
+#for i in range(11):  #3333
+#    deploy_redo('BGS_BRIGHT', 'sv3', i*300, (i+1)*300, n_cpu=32, niter=3000, hr=12) 
+#
+#for i in range(11):  #3333
+#    deploy_redo('BGS_FAINT', 'sv3', i*300, (i+1)*300, n_cpu=32, niter=3000, hr=12) 
+
+# calculate added values for healpix posteriors 
+#hpix_add_value('BGS_BRIGHT', 'sv3', hr=3)
+hpix_add_value('BGS_FAINT', 'sv3', hr=3)

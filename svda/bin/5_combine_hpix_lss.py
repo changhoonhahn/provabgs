@@ -13,6 +13,7 @@ import astropy.table as aTable
 
 dir_dat = '/global/cfs/cdirs/desi/survey/catalogs/SV3/LSS/fuji/LSScats/EDAbeta/'
 
+
 for target in ['BGS_BRIGHT', 'BGS_ANY']: 
     _bgs_n = aTable.Table.read(os.path.join(dir_dat, f'{target}_N_clustering.dat.fits'))
     _bgs_s = aTable.Table.read(os.path.join(dir_dat, f'{target}_S_clustering.dat.fits'))
@@ -85,4 +86,4 @@ for target in ['BGS_BRIGHT', 'BGS_ANY']:
 
     bgs.write(os.path.join(
         '/global/cfs/cdirs/desi/users/chahah/provabgs/svda/', 
-        f'{target}_clustering.sv3.logM.hdf5'), overwrite=True)
+        f'{target}_clustering.sv3.logMstar.hdf5'), overwrite=True)
