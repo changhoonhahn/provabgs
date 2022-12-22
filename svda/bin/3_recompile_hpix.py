@@ -29,11 +29,18 @@ uhpixs = np.unique(hpixs)
 missed_hpix, missed_tids = [], [] 
 for hpix in uhpixs: 
     tids_redone = tids[hpixs == hpix]
+
+    fhpix = os.path.join(dat_dir, f'provabgs-{survey}-bright-{hpix}.{target}.hdf5')
+
+    if os.path.isfile(fhpix) and datetime.datetime.fromtimestamp(os.path.getmtime(fhpix)).month == 12:
+        if datetime.datetime.fromtimestamp(os.path.getmtime(fhpix)).day >= 22: 
+            print('already updated %s' % fhpix)
+            return None 
         
     print('updating %i posteriors in healpix %i' % (len(tids_redone), hpix))
 
     # read hpix file 
-    with h5py.File(os.path.join(dat_dir, f'provabgs-{survey}-bright-{hpix}.{target}.hdf5'), 'r+') as fhpix:
+    with h5py.File(fhpix, 'r+') as fhpix:
         for tid in tids_redone: 
             is_tid = (fhpix['targetid'][...] == tid)
             if np.sum(is_tid) == 0: continue # hmm, it's not in the original file for whatever reason 

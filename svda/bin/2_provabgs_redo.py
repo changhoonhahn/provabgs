@@ -32,15 +32,9 @@ hpixels     = hpixels.astype(int)
 targetids   = targetids.astype(int)
 
 ngals = len(hpixels)
-print('running PROVABGS on %i %s targets' % (ngals, target))
 
-# declare SPS model
-m_nmf = Models.NMF(burst=True, emulator=True)
-
-# declare flux calibration
-m_fluxcalib = FluxCalib.constant_flux_factor
-
-def run_mcmc(igal): 
+igals = [] 
+for igal in np.arange(i0, np.min([i1, ngals+1])): 
     hpix        = hpixels[igal]
     targetid    = targetids[igal] 
 
@@ -50,8 +44,25 @@ def run_mcmc(igal):
     if os.path.isfile(fmcmc) and datetime.datetime.fromtimestamp(os.path.getmtime(fmcmc)).month >= 7:
         if datetime.datetime.fromtimestamp(os.path.getmtime(fmcmc)).day >= 25: 
             print('already re-run %s' % fmcmc)
-            return None 
+    igals.append(igal) 
+print('re-running PROVABGS on %i %s targets' % (len(igals), target))
+
+
+# declare SPS model
+m_nmf = Models.NMF(burst=True, emulator=True)
+
+# declare flux calibration
+m_fluxcalib = FluxCalib.constant_flux_factor
+
+
+def run_mcmc(igal): 
     
+    hpix        = hpixels[igal]
+    targetid    = targetids[igal] 
+
+    fmcmc = os.path.join('/global/cfs/cdirs/desi/users/chahah/provabgs/svda/healpix/',
+            str(hpix), 'provabgs.%i.hdf5' % targetid) 
+
     if os.path.islink(fmcmc): 
         os.system('rm %s' % fmcmc) 
     # compile obs
@@ -112,7 +123,7 @@ def run_mcmc(igal):
     return None 
 
 pool = Pool(processes=n_cpu) 
-pool.map(partial(run_mcmc), np.arange(i0, np.min([i1, ngals+1])))
+pool.map(partial(run_mcmc), igals)
 pool.close()
 pool.terminate()
 pool.join()
