@@ -7,10 +7,10 @@ def deploy_batch(ibatch, n_cpu=32, niter=3000, hr=48):
     '''
     cntnt = '\n'.join([
         "#!/bin/bash", 
-        '#SBATCH --qos=debug',
-        '#SBATCH --time=00:15:00',
-        #'#SBATCH --qos=regular',
-        #'#SBATCH --time=%s:00:00' % str(hr).zfill(2),
+        #'#SBATCH --qos=debug',
+        #'#SBATCH --time=00:15:00',
+        '#SBATCH --qos=regular',
+        '#SBATCH --time=%s:00:00' % str(hr).zfill(2),
         '#SBATCH --constraint=cpu',
         '#SBATCH -N 1',
         '#SBATCH -J lowz%i' % ibatch,
@@ -39,8 +39,8 @@ def deploy_batch(ibatch, n_cpu=32, niter=3000, hr=48):
     f.close()
 
     os.system('sbatch script.slurm')
-    #os.system('rm script.slurm')
+    os.system('rm script.slurm')
     return None 
 
-
-deploy_batch(2, n_cpu=32, niter=3000, hr=1) 
+for i in range(25): 
+    deploy_batch(i, n_cpu=32, niter=3000, hr=6) 

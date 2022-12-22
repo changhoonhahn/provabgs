@@ -23,13 +23,13 @@ photo_flux = fh5['photo_flux'][...]
 photo_ivar = fh5['photo_ivar'][...]
 
 w_obs = fh5['spec_wave'][...]
-f_obs = fh5['spec_flux'][...]
-i_obs = fh5['spec_ivar'][...]
+f_obs = fh5['spec_flux'][...][:,0,:]
+i_obs = fh5['spec_ivar'][...][:,0,:]
 
 f_fiber = fh5['fiber_flux'][...]
 sigma_f_fiber = fh5['fiber_sigma_flux'][...]
 
-zred = fh5['redshift'][...] 
+zred = fh5['redshift'][...].flatten()
 
 fh5.close()
 
@@ -51,6 +51,13 @@ def run_mcmc(igal):
 
     if (zred[igal] > 0.6) or (zred[igal] < 0.): 
         return None 
+    
+    photo_flux_i = np.array(list(photo_flux[igal][0]))
+    photo_ivar_i = np.array(list(photo_ivar[igal][0]))
+
+    if np.sum(photo_ivar_i == 0) > 0: 
+        # no photometric flux uncertainties.... wtf
+        return None 
 
     # get observations 
     # set prior
@@ -69,13 +76,9 @@ def run_mcmc(igal):
 
     desi_mcmc = Infer.desiMCMC(model=m_nmf, prior=prior, flux_calib=m_fluxcalib)
     
-    photo_flux_i = np.array(list(photo_flux[igal]))
-    photo_ivar_i = np.array(list(photo_ivar[igal]))
-    
-
     # run MCMC
     zeus_chain = desi_mcmc.run(
-        wave_obs=w_obs,
+        wave_obs=w_obs[igal,:],
         flux_obs=f_obs[igal,:],
         flux_ivar_obs=i_obs[igal,:],
         bands='desi', # g, r, z
