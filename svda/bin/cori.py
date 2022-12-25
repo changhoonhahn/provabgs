@@ -377,9 +377,9 @@ def hpix_add_value(target, survey, hr=3):
     ''' deploy script to calculate zmax and surviving stellar mass 
     '''
     cntnt = '\n'.join([
-        "#!/bin/bash", 
-        '#SBATCH --qos=regular',
-        '#SBATCH --time=%s:59:59' % str(hr-1).zfill(2),
+        "#!/bin/bash", #'#SBATCH --qos=regular', '#SBATCH --time=%s:59:59' % str(hr-1).zfill(2),
+        '#SBATCH --qos=debug',
+        '#SBATCH --time=00:29:59',
         '#SBATCH --constraint=haswell',
         '#SBATCH -N 1',
         '#SBATCH -J va_hpix_%s_%s' % (survey, target),
@@ -431,13 +431,47 @@ def hpix_add_value(target, survey, hr=3):
 #    gather_healpix(hpix, target='BGS_BRIGHT', survey='sv3', n_cpu=32,
 #            niter=3000, max_hr=6)
 
+import datetime 
+target  = 'BGS_BRIGHT'
+survey  = 'sv3' 
+
+# read healpixs and targetids
+hpixels, targetids = np.loadtxt(f'/global/cfs/cdirs/desi/users/chahah/provabgs/svda/{survey}-bright-{target}.flagged.dat', 
+                                dtype=int, unpack=True, usecols=[0,1])
+hpixels     = hpixels.astype(int)
+targetids   = targetids.astype(int)
+
+ngals = len(hpixels)
+
+igals = []
+for igal in range(ngals): 
+    hpix        = hpixels[igal]
+    targetid    = targetids[igal] 
+
+    fmcmc = os.path.join('/global/cfs/cdirs/desi/users/chahah/provabgs/svda/healpix/',
+            str(hpix), 'provabgs.%i.hdf5' % targetid) 
+
+    if os.path.isfile(fmcmc) and datetime.datetime.fromtimestamp(os.path.getmtime(fmcmc)).month >= 7:
+        if datetime.datetime.fromtimestamp(os.path.getmtime(fmcmc)).day >= 25: 
+            pass #print('already re-run %s' % fmcmc)
+    else: 
+        igals.append(igal) 
+igals = np.array(igals) 
+print(len(igals))
+'''
+for i in range((len(igals) // 8)): 
+    deploy_redo('BGS_BRIGHT', 'sv3', igals[i*8], igals[(i+1)*8], n_cpu=8, niter=3000, hr=2) 
+    #print(igals[i*8], igals[(i+1)*8])
+deploy_redo('BGS_BRIGHT', 'sv3', igals[(len(igals) // 8)*8], igals[-1], n_cpu=8, niter=3000, hr=2) 
+#print(igals[(len(igals) // 8)*8], igals[-1])
+'''
+
 
 #for i in range(11):  #3333
 #    deploy_redo('BGS_BRIGHT', 'sv3', i*300, (i+1)*300, n_cpu=32, niter=3000, hr=12) 
-#
 #for i in range(11):  #3333
 #    deploy_redo('BGS_FAINT', 'sv3', i*300, (i+1)*300, n_cpu=32, niter=3000, hr=12) 
 
 # calculate added values for healpix posteriors 
 #hpix_add_value('BGS_BRIGHT', 'sv3', hr=3)
-hpix_add_value('BGS_FAINT', 'sv3', hr=3)
+hpix_add_value('BGS_FAINT', 'sv3', hr=12)

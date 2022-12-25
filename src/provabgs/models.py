@@ -776,6 +776,7 @@ class NMF(Model):
         self._msurv_nmf_emu.load_state_dict(
                 torch.load(os.path.join(os.path.dirname(os.path.realpath(__file__)), 
                     'dat', 'emu_msurv.nmf.1.pt')) )
+        self._msurv_nmf_emu.to(self.device)
 
         # load burst Msurv
         self._msurv_burst_theta_shift = np.load(os.path.join(
@@ -792,6 +793,7 @@ class NMF(Model):
         self._msurv_burst_emu.load_state_dict(torch.load(
             os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dat', 
                 'emu_msurv.burst.0.pt')))
+        self._msurv_burst_emu.to(self.device)
         return None 
 
     def _surviving_mass(self, tt, tage, emulator=True): 

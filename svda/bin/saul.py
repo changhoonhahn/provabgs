@@ -169,7 +169,7 @@ def _gather_healpix_posteriors(hpix, target, survey, niter=3000):
         ivar_photo_obs.append(post_i.ivar_photo_obs)
 
         flux_spec_model.append(post_i.flux_spec_model)
-        flux_photo_model.append(post_i.flux_spec_model)
+        flux_photo_model.append(post_i.flux_photo_model)
     
     fpetal = os.path.join('/global/cfs/cdirs/desi/users/chahah/provabgs/svda/', 
             'provabgs-%s-bright-%i.%s.hdf5' % (survey, hpix, target)) 
