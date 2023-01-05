@@ -36,21 +36,22 @@ of $M_*$, we must include the selection effect when estimating the SMF.
 We do this by including weights derived from $z^{\rm max}$, the maximum
 redshift that galaxy $i$ could be placed and still be included in the BGS
 samples. 
-We derive $z^{\rm max}_{i,j}$ for every MCMC sample of 
-$\theta_{i,j}\sim p(\theta \given {\bfi X_i})$ by redshifting the predicted
-SED. 
-We then derive $V^{\rm max}_{i,j}$, the comoving volume out to 
-$z^{\rm max}_{i,j}$, and weights $w_{i,j} = 1/V^{\rm max}_{i,j}$. 
-We modify Eq.~\ref{eq:popinf} to include $w_{i,j}$: 
+We derive $z^{\rm max}_i$ for every galaxy using by redshifting the SED
+predicted by the best-fit parameters. 
+We then derive $V^{\rm max}_i$, the comoving volume out to $z^{\rm max}_i$, and
+weights $w_i = w_{i, {\rm comp}}/V^{\rm max}_i$. 
+We modify Eq.~\ref{eq:popinf} to include $w_i$: 
 \begin{align}
 p(\phi \given \{{\bfi X_i}\}) 
     \approx&~\frac{p(\phi)}{\prod\limits_{i=1}^N p({\bfi X_i})^{w_i}} 
     \prod\limits_{i=1}^N \left(\int p({\bfi X_i} \given \theta_i)~p(\theta_i \given \phi)~{\rm d}\theta_i \right)^{w_i} \\ 
     \approx&~\frac{p(\phi)}{\prod\limits_{i=1}^N p({\bfi X_i})^{w_i}} 
-    \prod\limits_{i=1}^N \left( \frac{1}{w_i} \sum\limits_{j=1}^{S_i} w_{i,j}
-    \frac{p(\theta_{i,j} \given \phi)}{p(\theta_{i,j})} \right)^{w_i},
+    \prod\limits_{i=1}^N \left( \sum\limits_{j=1}^{S_i}
+    \frac{p(\theta_{i,j} \given \phi)}{p(\theta_{i,j})} \right)^{w_i} \\
+    \approx&~\frac{p(\phi)}{\prod\limits_{i=1}^N p({\bfi X_i})^{w_i}} 
+    \prod\limits_{i=1}^N \left( \sum\limits_{j=1}^{S_i}
+    \frac{q_\phi(\theta_{i,j})}{p(\theta_{i,j})} \right)^{w_i}.
 \end{align} 
-where $w_i = \frac{1}{S_i} \sum\limits_{j=1}^{S_i} w_{i,j}$. 
 
 In practice, we do not derive the full posterior 
 $p(\phi \given \{{\bfi X_i}\})$. 
@@ -60,14 +61,13 @@ $\log p(\phi \given \{{\bfi X_i}\})$.
 We expand, 
 \begin{align}
 \log p(\phi \given \{{\bfi X_i}\}) 
-    \approx&~\log p(\phi) - 
-    \sum\limits_{i=1}^N w_i \log w_i + 
-    \sum\limits_{i=1}^N w_i \log \left(\sum\limits_{j=1}^{S_i} w_{i,j} \frac{p(\theta_{i,j} \given \phi)}{p(\theta_{i,j}} \right).
+    \approx&~\log p(\phi) + % \sum\limits_{i=1}^N w_i \log w_i + 
+    \sum\limits_{i=1}^N w_i \log \left(\sum\limits_{j=1}^{S_i} \frac{q_\phi(\theta_{i,j})}{p(\theta_{i,j})} \right).
 \end{align} 
 Since the first two terms are constant, we derive $\phi_{\rm MAP}$ by
 maximizing 
 \begin{equation}
-    \max_\phi \sum\limits_{i=1}^N w_i \log \left(\sum\limits_{j=1}^{S_i} w_{i,j} \frac{p(\theta_{i,j} \given \phi)}{p(\theta_{i,j}} \right).
+    \max_\phi~~\sum\limits_{i=1}^N w_i \log \left(\sum\limits_{j=1}^{S_i} \frac{q_\phi(\theta_{i,j})}{p(\theta_{i,j})} \right).
 \end{equation}
 We use {\sc Adam} optimizer and determine the architecture of the normalizing
 flow through experimentation.  
@@ -81,3 +81,17 @@ flow through experimentation.
 %\sum\limits_{i=1}^N w_i \log \left(\int p({\bfi X_i} \given \theta_i)~p(\theta_i \given \phi)~{\rm d}\theta_i \right) \\
 %\approx&~\log p(\phi) + 
 %\sum\limits_{i=1}^N w_i \log \left(\frac{1}{w_i} \sum\limits_{j=1}^{S_i} w_{i,j} \frac{p(\theta_{i,j} \given \phi)}{p(\theta_{i,j}} \right) \\
+
+
+%\subsection{Targeting Completeness} \label{sec:ts}
+% https://desi.lbl.gov/trac/wiki/ClusteringWG/LSScat/SV3/version2.1/fulldat
+% https://desi.lbl.gov/trac/wiki/ClusteringWG/LSScat/SV3/version2.1/fullran
+\subsection{Spectroscopic Completeness} \label{sec:spec_comp}
+% https://desi.lbl.gov/trac/wiki/ClusteringWG/LSScat/DA02main/current_version#clusteringfiles
+fiber assignment completeness: weights available from the alternate MTLs
+
+
+redshift failure weights based on TSNR2 and fiber flux 
+
+\subsection{The Probabilistic Stellar Mass Function} \label{sec:psmf}
+
