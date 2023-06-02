@@ -43,5 +43,5 @@ def deploy_bgs_test(i0, i1, n_cpu=32, niter=3000, hr=48):
     return None 
 
 
-for i in range(1, 99): 
+for i in range(99): 
     deploy_bgs_test(510*i, np.min([510*(i+1), 50578]), n_cpu=32, niter=3000, hr=24)

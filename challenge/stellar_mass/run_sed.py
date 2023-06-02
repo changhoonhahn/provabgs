@@ -3,6 +3,7 @@ import pickle
 import numpy as np
 from astropy.io import fits 
 from astropy.table import Table
+from astropy.cosmology import FlatLambdaCDM
 
 from functools import partial
 from multiprocessing.pool import Pool 
@@ -13,8 +14,21 @@ from provabgs import models as Models
 from provabgs import flux_calib as FluxCalib
 
 
+omega_b = 0.02237
+omega_cdm = 0.12
+h = 0.6736
+A_s = 2.083e-09
+n_s = 0.9649
+alpha_s = 0.0
+N_ur = 2.0328
+N_ncdm = 1.0
+omega_ncdm = 0.0006442
+w0_fld = -1.0
+wa_fld = 0.0
+desi_cosmo = FlatLambdaCDM(H0=h*100., Om0=(omega_b + omega_cdm)*h**-2, Ob0=omega_b*h**-2)
+
 # declare SPS model
-m_nmf = Models.NMF(burst=True, emulator=True)
+m_nmf = Models.NMF(burst=True, emulator=True, cosmo=desi_cosmo)
 
 # declare flux calibration
 m_fluxcalib = FluxCalib.constant_flux_factor
@@ -92,6 +106,8 @@ def run_mcmc(igal, niter=3000):
     # get observations 
     zred, photo_flux, photo_ivar_flux, f_fiber, sigma_f_fiber, w_obs, f_obs, i_obs =\
             read_spectrophotometry(igal)
+    if (zred < 0) or (zred > 0.6): 
+        return None 
 
     # set prior
     prior = Infer.load_priors([
@@ -110,24 +126,27 @@ def run_mcmc(igal, niter=3000):
     desi_mcmc = Infer.desiMCMC(model=m_nmf, prior=prior, flux_calib=m_fluxcalib)
 
     # run MCMC
-    zeus_chain = desi_mcmc.run(
-        wave_obs=w_obs,
-        flux_obs=f_obs,
-        flux_ivar_obs=i_obs,
-        bands='desi', # g, r, z
-        photo_obs=photo_flux, 
-        photo_ivar_obs=photo_ivar_flux, 
-        zred=zred,
-        vdisp=0.,
-        sampler='zeus',
-        nwalkers=30,
-        burnin=0,
-        opt_maxiter=2000,
-        niter=niter,
-        progress=False,
-        debug=True,
-        writeout=fmcmc,
-        overwrite=True)
+    try: 
+        zeus_chain = desi_mcmc.run(
+            wave_obs=w_obs,
+            flux_obs=f_obs,
+            flux_ivar_obs=i_obs,
+            bands='desi', # g, r, z
+            photo_obs=photo_flux, 
+            photo_ivar_obs=photo_ivar_flux, 
+            zred=zred,
+            vdisp=0.,
+            sampler='zeus',
+            nwalkers=30,
+            burnin=0,
+            opt_maxiter=2000,
+            niter=niter,
+            progress=False,
+            debug=True,
+            writeout=fmcmc,
+            overwrite=True)
+    except ValueError: 
+        return None 
     return None 
 
 
