@@ -1398,6 +1398,7 @@ class NMF_DE(NMF):
           FSPS returns a grid for tage = 0 but 1e-8 gets the youngest isochrone
           anyway. 
         * 2021/06/24: log-spaced lookback time implemented
+        * 2024/04/18: added dust emission
         '''
         if self._ssp is None: self._ssp_initiate()  # initialize FSPS StellarPopulation object
         theta = self._parse_theta(tt) 
@@ -1562,6 +1563,80 @@ class NMF_DE(NMF):
                 sfh=sfh,                # sfh type 
                 dust_type=dust_type,            
                 imf_type=imf_type,      # chabrier IMF
+                add_dust_emission=True  # dust emission ON 
+                )                     
+        return None  
+
+
+
+class NMF_NDE(NMF_DE): 
+    ''' NMF SPS model with Nebular and Dust Emission (DE)
+    
+    SPS model with non-parametric star formation and metallicity histories
+    and flexible dust attenuation model + dust emission model. The SFH and ZH are 
+    based on non-negative matrix factorization (NMF) bases (Tojeiro+in prep). 
+    The dust attenuation uses a standard Charlot & Fall dust model.
+
+    The SFH uses 4 NMF bases. If you specify `burst=True`, the SFH will
+    include an additional burst component. 
+    
+    The ZH uses 2 NMF bases. Minimum metallicities of 4.49e-5 and 4.49e-2 are
+    imposed automatically on the ZH. These limits are based on the metallicity
+    limits of the MIST isochrones.
+
+    The nebular emission is based on the default FSPS implementation by Nell Byler. 
+
+    The dust attenuation is modeled using a 3 parameter Charlot & Fall model.
+    `dust1` is tau_BC, the optical depth of dust attenuation of birth cloud
+    that only affects young stellar population. `dust2` is tau_ISM, the optical
+    depth of dust attenuation from the ISM, which affects all stellar emission.
+    `dust_index` is the attenuation curve slope offset from Calzetti.
+
+    The dust emission is modeled using the Draine & Li (2007) dust emission model
+    with 3 free parameters: Umin, gamma_e, Q_PAH, 
+    
+    If you specify `emulator=True`, the model will use a PCA NN emulator to
+    evaluate the SPS model, rather than Flexible Stellar Population Synthesis.
+    The emulator has <1% level accuracy and its *much* faster than FSPS. I
+    recommend using the emulator for parameter exploration. 
+
+
+    Parameters
+    ----------
+    burst : bool
+        If True include a star bursts component in SFH. (default: True) 
+
+    emulator : bool
+        If True, use emulator rather than running FSPS. 
+
+    cosmo : astropy.comsology object
+        specify cosmology. If cosmo=None, NMF uses astorpy.cosmology.Planck13 
+        by default.
+
+
+    Notes 
+    -----
+    * only supports 4 component SFH with or without burst and 2 component ZH 
+    * only supports Calzetti+(2000) attenuation curve) and Chabrier IMF. 
+    '''
+    def __init__(self, burst=True, emulator=False, cosmo=None): 
+        if emulator: raise NotImplementedError 
+
+        super().__init__(burst=burst, emulator=emulator, cosmo=cosmo) # initializes the model
+
+    def _ssp_initiate(self): 
+        ''' initialize sps (FSPS StellarPopulaiton object) 
+        '''
+        sfh         = 0 # tabulated SFH
+        dust_type   = 4 # dust1, dust2, and dust_index 
+        imf_type    = 1 # chabrier
+
+        self._ssp = fsps.StellarPopulation(
+                zcontinuous=1,          # interpolate metallicities
+                sfh=sfh,                # sfh type 
+                dust_type=dust_type,            
+                imf_type=imf_type,      # chabrier IMF
+                add_neb_emission=True,  # nebular emission ON
                 add_dust_emission=True  # dust emission ON 
                 )                     
         return None  
