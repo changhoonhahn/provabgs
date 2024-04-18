@@ -31,7 +31,7 @@ m_nmf = Models.NMF(burst=True, emulator=True)
 m_fluxcalib = FluxCalib.constant_flux_factor
 
 def run_mcmc(igal): 
-    fmcmc = os.path.join('/global/cscratch1/sd/chahah/provabgs/svda/healpix/', 
+    fmcmc = os.path.join('/global/cfs/cdirs/desi/users/chahah/provabgs/svda/healpix/',
             str(hpix), 'provabgs.%i.hdf5' % meta['TARGETID'][igal])
     if os.path.isfile(fmcmc): 
         # don't overwrite 
@@ -56,6 +56,9 @@ def run_mcmc(igal):
     
     photo_flux_i = np.array(list(photo_flux[igal]))
     photo_ivar_i = np.array(list(photo_ivar[igal]))
+    
+    if (zred[igal] > 0.6) or (zred[igal] < 0.): 
+        return None 
 
     # run MCMC
     zeus_chain = desi_mcmc.run(

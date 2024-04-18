@@ -34,6 +34,20 @@ def jansky_cgs():
     return 1e-23
 
 
+def wavelength_emlines(): 
+    ''' rest-frame wavelengths of emission lines 
+    ''' 
+    return np.array([
+        1033.3  , 1215.67 , 1239.42 , 1305.53 , 1335.52 , 1399.8  ,
+        1545.86 , 1640.4  , 1665.85 , 1857.4  , 1908.27 , 2326.   ,
+        2439.5  , 2800.32 , 3346.79 , 3426.85 , 3728.3  , 3798.976,
+        3836.47 , 3889.   , 3934.777, 3969.588, 4072.3  , 4102.89 ,
+        4305.61 , 4341.68 , 4364.436, 4862.68 , 4960.295, 5008.24 ,
+        5176.7  , 5895.6  , 6302.046, 6365.536, 6549.86 , 6564.61 ,
+        6585.27 , 6707.89 , 6718.29 , 6732.67 ])
+
+
+
 def tlookback_bin_edges(tage): 
     ''' hardcoded log-spaced lookback time bin edges. Bins have 0.1 log10(Gyr)
     widths. See `nb/tlookback_binning.ipynb` for comparison of linear and

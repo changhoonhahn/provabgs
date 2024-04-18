@@ -457,14 +457,20 @@ for igal in range(ngals):
     else: 
         igals.append(igal) 
 igals = np.array(igals) 
+print(igals)
 print(len(igals))
-'''
-for i in range((len(igals) // 8)): 
-    deploy_redo('BGS_BRIGHT', 'sv3', igals[i*8], igals[(i+1)*8], n_cpu=8, niter=3000, hr=2) 
-    #print(igals[i*8], igals[(i+1)*8])
-deploy_redo('BGS_BRIGHT', 'sv3', igals[(len(igals) // 8)*8], igals[-1], n_cpu=8, niter=3000, hr=2) 
-#print(igals[(len(igals) // 8)*8], igals[-1])
-'''
+#for i in range((len(igals) // 4)): 
+#    deploy_redo('BGS_BRIGHT', 'sv3', igals[i*4], igals[(i+1)*4-1], n_cpu=4, niter=3000, hr=4) 
+#    print(igals[i*4], igals[(i+1)*4-1])
+#deploy_redo('BGS_BRIGHT', 'sv3', igals[(len(igals) // 4)*4], igals[-1], n_cpu=4, niter=3000, hr=4) 
+#deploy_redo('BGS_BRIGHT', 'sv3', 896, 896, n_cpu=1, niter=3000, hr=4) 
+#deploy_redo('BGS_BRIGHT', 'sv3', 899, 899, n_cpu=1, niter=3000, hr=4) 
+#deploy_redo('BGS_BRIGHT', 'sv3', 1753, 1753, n_cpu=1, niter=3000, hr=4) 
+#deploy_redo('BGS_BRIGHT', 'sv3', 1793, 1793, n_cpu=1, niter=3000, hr=4) 
+#deploy_redo('BGS_BRIGHT', 'sv3', 2396, 2396, n_cpu=1, niter=3000, hr=4) 
+#deploy_redo('BGS_BRIGHT', 'sv3', 3295, 3295, n_cpu=1, niter=3000, hr=4) 
+#deploy_redo('BGS_BRIGHT', 'sv3', 3332, 3332, n_cpu=1, niter=3000, hr=4) 
+#print(igals[(len(igals) // 4)*4], igals[-1])
 
 
 #for i in range(11):  #3333
@@ -474,4 +480,4 @@ deploy_redo('BGS_BRIGHT', 'sv3', igals[(len(igals) // 8)*8], igals[-1], n_cpu=8,
 
 # calculate added values for healpix posteriors 
 #hpix_add_value('BGS_BRIGHT', 'sv3', hr=3)
-hpix_add_value('BGS_FAINT', 'sv3', hr=12)
+#hpix_add_value('BGS_FAINT', 'sv3', hr=12)

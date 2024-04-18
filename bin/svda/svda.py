@@ -42,8 +42,9 @@ def healpix(hpix, target='BGS_BRIGHT', redux='fuji', survey='sv3'):
             (rr['SPECTYPE'] == 'GALAXY') & 
             (rr['ZERR'] < 0.0005 * (1. + rr['Z'])) & 
             (rr['DELTACHI2'] > 40))
-
-    is_target = (is_bgs & goodfiber & good_redshift) 
+    zlim = (rr['Z'] > 0.) & (rr['Z'] < 0.6)
+    
+    is_target = (is_bgs & goodfiber & good_redshift & zlim) 
     
     spec = readDESIspec(fcoadd)
     # spectra  

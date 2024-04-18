@@ -9,7 +9,7 @@ def deploy_sed(igal0, igal1, sample='sv_everest_faint_sf.fits', n_cpu=32, niter=
         "#!/bin/bash", 
         '#SBATCH -p regular',
         '#SBATCH -N 1',
-        '#SBATCH -t 06:00:00',
+        '#SBATCH -t 02:00:00',
         '#SBATCH -C haswell',
         '#SBATCH -J %s_%i_%i' % (samp, igal0, igal1),
         '#SBATCH -o o/_%s_%i_%i.o' % (samp, igal0, igal1),
@@ -46,8 +46,10 @@ n_agn   = 2087
 n_comp  = 2135
 
 # 12/23/2021 --- first test run
+for i in range(1,(n_sf // 32)+1): 
+    deploy_sed(32*i, np.min([32*(i+1)-1, n_agn-1]), sample='sv_everest_faint_sf.fits', n_cpu=32, niter=3000)
 #deploy_sed(0, 31, sample='sv_everest_faint_sf.fits', n_cpu=32, niter=3000)
-for i in range(1,(n_agn // 32)+1): 
-    deploy_sed(32*i, np.min([32*(i+1)-1, n_agn-1]), sample='sv_everest_faint_agn.fits', n_cpu=32, niter=3000)
-for i in range(1,(n_comp // 32)+1): 
-    deploy_sed(32*i, np.min([32*(i+1)-1, n_agn-1]), sample='sv_everest_faint_comp.fits', n_cpu=32, niter=3000)
+#for i in range(1,(n_agn // 32)+1): 
+#    deploy_sed(32*i, np.min([32*(i+1)-1, n_agn-1]), sample='sv_everest_faint_agn.fits', n_cpu=32, niter=3000)
+#for i in range(1,(n_comp // 32)+1): 
+#    deploy_sed(32*i, np.min([32*(i+1)-1, n_agn-1]), sample='sv_everest_faint_comp.fits', n_cpu=32, niter=3000)

@@ -22,7 +22,9 @@ def gather_healpix(hpix, target='BGS_BRIGHT', survey='sv3', n_cpu=32,
 
     fpetal = os.path.join(dat_dir, str(hpix), 
             'provabgs-%s-bright-%i.hdf5' % (survey, hpix)) 
-    if os.path.isfile(fpetal): return None 
+    if os.path.isfile(fpetal): 
+        print('%s done' % fpetal)
+        return None 
 
     re_run = _gather_healpix_posteriors(hpix, target, survey, niter=niter)
 
@@ -91,6 +93,7 @@ def _gather_healpix_posteriors(hpix, target, survey, niter=3000):
         fmcmc = os.path.join(dat_dir, str(hpix), 
                 'provabgs.%i.hdf5' % meta['TARGETID'][igal])
         if not os.path.isfile(fmcmc): 
+            print('  %i of %i done' % (igal, ngals))
             return True 
 
         post_i = Infer.PostOut()
@@ -343,6 +346,6 @@ is_sv3 = (tiles_fuji['SURVEY'] == 'sv3')
 
 hpixs = np.unique(np.sort(np.array(tiles_fuji['HEALPIX'][is_bright & is_sv3])))
 
-for hpix in hpixs[10:]: 
+for hpix in hpixs[:100]: 
     gather_healpix(hpix, target='BGS_BRIGHT', survey='sv3', n_cpu=32,
-            niter=3000, max_hr=2)
+            niter=3000, max_hr=6)
