@@ -46,7 +46,7 @@ class Model(object):
         self.cosmo = cosmo
 
         # interpolators for speeding up cosmological calculations 
-        _z = np.linspace(0.0, 0.5, 100)
+        _z = np.linspace(0.0, 5., 1000)
         _tage = self.cosmo.age(_z).value
         _d_lum_cm = self.cosmo.luminosity_distance(_z).to(U.cm).value # luminosity distance in cm
 
