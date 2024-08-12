@@ -1,0 +1,22 @@
+cff-version: 1.1.0
+message: "Please cite the following works when using this software: https://ui.adsabs.harvard.edu/abs/2024ascl.soft07006H"
+authors:
+- family-names: Hahn
+  given-names: ChangHoon
+- family-names: Tojeiro
+  given-names: Rita
+- family-names: Alsing
+  given-names: Justin
+- family-names: Kwon
+  given-names: James Kyubin
+title: "provabgs: SED modeling tools for PROVABGS"
+version: ApJ version 
+date-released: August 10, 2022 
+identifiers:
+ - type: "ascl-id"
+   value: "2407.006"
+ - type: "doi"
+   value: PLACEHOLDER
+ - type: "bibcode"
+   value: "2024ascl.soft07006H"
+abstract: "provabgs infers full posterior distributions of galaxy properties for galaxies in the DESI Bright Galaxy Survey using state-of-the-art Bayesian spectral energy distribution (SED) modeling of DESI spectroscopy and photometry. provabgs includes a state-of-the-art stellar population synthesis (SPS) model based on non-parametric prescription for star formation history, a metallicity history that varies over the age of the galaxy, and a flexible dust prescription. It has a neural network emulator for the SPS model that enables accelerated inference. Full posteriors of the 12 SPS parameters can be derived in ~10 minutes. The emulator is currently designed for galaxies from 0 < z < 0.6. provabgs also includes a Bayesian inference pipeline that is based on zeus (ascl:2008.010)."
