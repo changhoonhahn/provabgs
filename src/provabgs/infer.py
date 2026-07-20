@@ -4,14 +4,26 @@ inference framework
 
 
 '''
-import os 
-import h5py 
-import numpy as np 
-import zeus 
-import emcee
+import os
+import h5py
+import numpy as np
 import scipy.stats as stat
 import scipy.optimize as op
 from speclite import filters as specFilter
+
+# `zeus` and `emcee` are only needed for the MCMC samplers below (`_zeus`,
+# `_emcee`). They're an optional install (`pip install provabgs[mcmc]`) so
+# that the `Prior`/`PriorSeq` classes can be used without pulling in either
+# sampler.
+try:
+    import zeus
+except ImportError:
+    zeus = None
+
+try:
+    import emcee
+except ImportError:
+    emcee = None
 
 
 class _MCMC(object): 
@@ -112,11 +124,16 @@ class _MCMC(object):
         Notes:
         -----
         '''
-        self.nwalkers = nwalkers # number of walkers 
+        if emcee is None:
+            raise ImportError(
+                "emcee is required to run the emcee sampler. Install it "
+                "with `pip install provabgs[mcmc]`.")
+
+        self.nwalkers = nwalkers # number of walkers
 
         ndim = self.prior.ndim
 
-        if (writeout is None) or (not os.path.isfile(writeout)) or (overwrite): 
+        if (writeout is None) or (not os.path.isfile(writeout)) or (overwrite):
             # if mcmc chain file does not exist or we want to overwrite
             # initialize the walkers 
             start = self._initialize_walkers(lnpost_args, lnpost_kwargs, 
@@ -251,11 +268,16 @@ class _MCMC(object):
         Notes:
         -----
         '''
-        self.nwalkers = nwalkers # number of walkers 
+        if zeus is None:
+            raise ImportError(
+                "zeus-mcmc is required to run the zeus sampler. Install it "
+                "with `pip install provabgs[mcmc]`.")
+
+        self.nwalkers = nwalkers # number of walkers
 
         self.ndim_sampling = self.prior.ndim_sampling
-        
-        start = self._initialize_walkers(lnpost_args, lnpost_kwargs, 
+
+        start = self._initialize_walkers(lnpost_args, lnpost_kwargs,
                 nwalkers=nwalkers, opt_maxiter=opt_maxiter,
                 theta_start=theta_start, debug=debug)
 
