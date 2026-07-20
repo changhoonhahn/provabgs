@@ -1140,8 +1140,8 @@ class FlatDirichletPrior(Prior):
         self.ndim = ndim 
         self.ndim_sampling = ndim - 1
 
-    def transform(self, tt): 
-        ''' warped manifold transformation as specified in Betancourt (2013).
+    def transform(self, tt):
+        r''' warped manifold transformation as specified in Betancourt (2013).
         This function transforms samples from a uniform distribution to a
         Dirichlet distribution .
 

@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "provabgs"
+dynamic = ["version"]
+description = "Python Package for the PRObabilistic Value-Added BGS"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "ChangHoon Hahn", email = "changhoon.hahn@princeton.edu" },
+]
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+
+# Base install: everything needed to build/evaluate SEDs with the NN
+# emulators. This is the path most users (e.g. students) want, and it has
+# no compiled/heavy dependencies (no fsps, no torch, no MCMC samplers).
+dependencies = [
+    "numpy>=1.20",
+    "scipy>=1.7",
+    "h5py>=3.0",
+    "astropy>=5.0",
+    "speclite>=0.16",
+    "numba",
+]
+
+[project.optional-dependencies]
+# Original (non-emulator) SPS model -- requires compiling FSPS.
+fsps = ["fsps>=0.4.7"]
+# Bayesian inference pipeline (MCMC fitting via infer.py).
+mcmc = ["zeus-mcmc", "emcee"]
+# `msurv` surviving stellar mass emulator (nns.py).
+torch = ["torch"]
+# Everything above.
+full = ["provabgs[fsps,mcmc,torch]"]
+# Dev/test dependencies, deliberately excludes `fsps` since it requires a
+# compiled Fortran toolchain -- see environment.yml for a conda-based path
+# that includes it.
+dev = ["provabgs[mcmc,torch]", "pytest"]
+
+[project.urls]
+Homepage = "https://github.com/changhoonhahn/provabgs"
+Documentation = "https://changhoonhahn.github.io/provabgs"
+
+[tool.setuptools.dynamic]
+version = { attr = "provabgs.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+provabgs = ["dat/*.pkl", "dat/*.txt", "dat/*.pt", "dat/*.npy", "dat/*.ecsv"]

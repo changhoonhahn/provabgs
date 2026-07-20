@@ -1,0 +1,19 @@
+name: provabgs
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.9
+  - numpy
+  - scipy
+  - h5py
+  - astropy
+  - fsps          # prebuilt FSPS -- avoids compiling Fortran yourself
+  - python-fsps
+  - pytorch
+  - numba
+  - pip
+  - pip:
+      - speclite
+      - zeus-mcmc
+      - emcee
+      - -e .

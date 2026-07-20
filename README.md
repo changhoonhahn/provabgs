@@ -1,5 +1,5 @@
 # PRObabilistic Value-Added Bright Galaxy Survey (PROVABGS)
-[![Gitter](https://badges.gitter.im/provabgs/provabgs.svg)](https://gitter.im/provabgs/provabgs?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+[![CI](https://github.com/changhoonhahn/provabgs/actions/workflows/ci.yml/badge.svg)](https://github.com/changhoonhahn/provabgs/actions/workflows/ci.yml)
 [![arXiv](https://img.shields.io/badge/arXiv-2202.01809-b31b1b.svg)](https://arxiv.org/abs/2202.01809)
 [![arXiv](https://img.shields.io/badge/arXiv-2209.14323-b31b1b.svg)](https://arxiv.org/abs/2209.14323)
 
@@ -26,34 +26,42 @@ For additional details see [documentation](https://changhoonhahn.github.io/prova
 and [Hahn *et al* (2022)](https://arxiv.org/abs/2202.01809)
 
 ## Installation
-To install the package, clone the github repo and use `pip` to install  
+Clone the repo first:
 ```bash
-# clone github repo 
 git clone https://github.com/changhoonhahn/provabgs.git
-
 cd provabgs
-
-# install 
-pip install -e . 
 ```
 
-### requirements
-If you only plan to use `provabgs` with the neural emulators, then `provabgs` 
-does not require `fsps`. However, if you want to use the original SPS model, 
-you will need to install `python-fsps`.  See `python-fsps`
-[documentation](https://python-fsps.readthedocs.io/en/latest/) for installation
-instruction. 
-
-If you're using `provabgs` on NERSC, see [below](#fsps-on-nersc) for 
-some notes on installing `FSPS` on `NERSC`.
-
-### fsps on NERSC
-I've been running into some issues installing and using `fsps` on NERSC. *e.g.*
-there's an import error with libgfotran.so.5. The following may resolve the problem... 
+### Option A: just the neural network emulators (recommended for most users)
+This is all you need to evaluate SEDs and run inference with the emulator --
+no compiled dependencies (no `fsps`, no `torch`), and it's what the
+[example notebook](nb/example.ipynb) uses.
+```bash
+pip install -e .
 ```
+To also use the Bayesian MCMC fitting pipeline (`provabgs.infer`), add the `mcmc` extra:
+```bash
+pip install -e ".[mcmc]"
+```
+
+### Option B: everything, including the original (non-emulator) FSPS model
+`python-fsps` requires compiling FSPS's Fortran code, which is where most
+install trouble comes from. Installing via `conda`/`mamba` pulls prebuilt
+binaries and avoids that entirely:
+```bash
+conda env create -f environment.yml
+conda activate provabgs
+```
+If you'd rather use plain `pip`, see the `python-fsps`
+[documentation](https://python-fsps.readthedocs.io/en/latest/) for
+build instructions, then run `pip install -e ".[full]"`.
+
+### NERSC / cluster notes
+If you're using `provabgs` on NERSC, you may run into an import error with
+`libgfortran.so.5` when using `fsps`. The following has resolved it before:
+```bash
 module unload PrgEnv-intel
 module load PrgEnv-gnu
-
 ```
 
 ## Example
@@ -66,6 +74,18 @@ If you're interested in conducting Bayesian SED modeling on DESI spectra in
 particular, check out the [nb/tutorial_desispec.ipynb](https://github.com/changhoonhahn/provabgs/blob/main/nb/tutorial_desispec.ipynb)
 notebook. 
 
+## Development
+If you're contributing notebooks or code, please install [`pre-commit`](https://pre-commit.com)
+so exploratory/debugging notebooks get their outputs stripped before they're committed:
+```bash
+pip install pre-commit
+pre-commit install
+```
+This keeps large embedded images/data out of git history (the two tutorial notebooks under
+`nb/` are exempt so their rendered outputs stay visible). Please also avoid committing large
+binary files (trained model weights, data files) directly -- attach them to a GitHub release
+or a Zenodo record and download them instead.
+
 ## Team
 - [ChangHoon Hahn](https://changhoonhahn.github.io) (Princeton)
 - Rita Tojeiro (St Andrews)
@@ -74,4 +94,4 @@ notebook.
 
 
 ## Contact
-If you have any questions or need help using the package, please raise a github issue, post a message on gitter, or contact me at changhoon.hahn@princeton.edu
+If you have any questions or need help using the package, please raise a github issue or contact me at changhoon.hahn@princeton.edu
