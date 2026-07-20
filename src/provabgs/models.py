@@ -115,7 +115,10 @@ class Model(object):
             w_z = wave_rest * (1. + _zred)
             d_lum = self._d_lum_z_interp(_zred) 
             #flux_z = lum_ssp * UT.Lsun() / (4. * np.pi * d_lum**2) / (1. + _zred) * 1e17 # 10^-17 ergs/s/cm^2/Ang
-            flux_z = lum_ssp * 3.846e50 / (4. * np.pi * d_lum**2) / (1. + _zred) # 10^-17 ergs/s/cm^2/Ang
+            # lum_ssp is float32 (see util.py); casting to float64 first
+            # avoids silent overflow to inf under numpy>=2.0's promotion
+            # rules, since 3.846e50 exceeds the float32 range (~3.4e38).
+            flux_z = lum_ssp.astype(np.float64) * 3.846e50 / (4. * np.pi * d_lum**2) / (1. + _zred) # 10^-17 ergs/s/cm^2/Ang
     
             # apply velocity dispersion 
             if vdisp == 0: 
@@ -226,7 +229,10 @@ class Model(object):
         w_z = wave_rest * (1. + zred)
         if d_lum is None: d_lum = self._d_lum_z_interp(zred) 
         #flux_z = lum_ssp * UT.Lsun() / (4. * np.pi * d_lum**2) / (1. + _zred) * 1e17 # 10^-17 ergs/s/cm^2/Ang
-        flux_z = lum_ssp * 3.846e50 / (4. * np.pi * d_lum**2) / (1. + zred) # 10^-17 ergs/s/cm^2/Ang
+        # lum_ssp is float32 (see util.py); casting to float64 first avoids
+        # silent overflow to inf under numpy>=2.0's promotion rules, since
+        # 3.846e50 exceeds the float32 range (~3.4e38).
+        flux_z = lum_ssp.astype(np.float64) * 3.846e50 / (4. * np.pi * d_lum**2) / (1. + zred) # 10^-17 ergs/s/cm^2/Ang
 
         # apply velocity dispersion 
         if vdisp == 0: 
